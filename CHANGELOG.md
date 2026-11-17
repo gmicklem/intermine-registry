@@ -8,8 +8,8 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
 - The data is a version-controlled file, `resources/instances.edn`, validated with clojure.spec at
   start-up and in CI; mines are added and changed by pull request. Seeded from the live registry's
   `/service/instances` on 17 Nov 2026 (14 running instances).
-- Versions and branding are refreshed every `REGISTRY_REFRESH_MINUTES` (default 60; was daily at
-  midnight), with 10 s timeouts, and every answer is validated: HTML pages (served by mines behind
+- Versions and branding are refreshed every `REGISTRY_REFRESH_MINUTES` (default 360, every six hours:
+  the registry advertises the range of mines, not their uptime; was daily at midnight), with 10 s timeouts, and every answer is validated: HTML pages (served by mines behind
   bot protection or retired mines) are no longer stored as versions; the previous value is kept and
   the problem shown on `/status`. A mine whose `/service/version/intermine` answers 200 with
   something that is not a version counts as a failed check (it was "Running").
@@ -17,9 +17,10 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   the home page, with their last known versions and branding. Each instance has a new `last_check`
   object `{time, outcome ("ok"|"failed"), reason, since}` (reasons: `timeout`, `connection refused`,
   `http NNN`, `bot-protection page`, `html instead of json`, `invalid version string`, ...), kept in
-  the cache. `status` is `"Running"` (last check ok), `"Unreachable"` (two consecutive failed
-  checks; the first failure is recorded in `last_check` but keeps `"Running"`) or
-  `"Not checked yet"`; `"Not Running"` is gone (an old cache reads as `"Unreachable"`). The seeded
+  the cache. `status` is `"Running"` (last check ok, or failing for less than
+  `REGISTRY_UNREACHABLE_AFTER_HOURS`; failures are recorded in `last_check` and the pages note them),
+  `"Unreachable"` (the checks have been failing for more than `REGISTRY_UNREACHABLE_AFTER_HOURS`,
+  default 24, measured from `last_check.since`) or `"Not checked yet"`; `"Not Running"` is gone (an old cache reads as `"Unreachable"`). The seeded
   capture counts as an ok check at its `last_time_updated`. `/health` gains `unreachable`.
 - Pages: grey status dot with the reason as tooltip and under the mine name on the home page; a
   "Last check" section on instance pages with a note for maintainers whose mine answers with a

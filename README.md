@@ -59,7 +59,8 @@ All configuration is by environment variable:
 | Variable | Default | Meaning |
 |---|---|---|
 | `PORT` | `3000` | HTTP port (as the Node app) |
-| `REGISTRY_REFRESH_MINUTES` | `60` | refresh every mine this often; `0` disables the schedule. The first run is 10 s after start-up. |
+| `REGISTRY_REFRESH_MINUTES` | `360` | refresh every mine this often (every 6 hours; the registry advertises the range of mines, not their uptime); `0` disables the schedule. The first run is 10 s after start-up. |
+| `REGISTRY_UNREACHABLE_AFTER_HOURS` | `24` | a mine is marked Unreachable only when its checks have been failing for more than this many hours (see [Status and last check](#status-and-last-check)) |
 | `REGISTRY_CACHE_DIR` | `./cache` (`/cache` in Docker) | where `registry-cache.edn` keeps the last refreshed values, and `logos/` the mines' logos, so a restart does not lose them |
 | `REGISTRY_ADMIN_TOKEN` | unset | enables `PUT /service/synchronize[/{id}]` with `Authorization: Bearer <token>`; unset, those answer 405 |
 | `REGISTRY_INSTANCES_FILE` | the bundled `resources/instances.edn` | path of an instances file to use instead |
@@ -102,11 +103,16 @@ Each instance in the API has a `status` string (as before) and a `last_check` ob
   check ran; `since` is the time of the first failure of the current run of failures (`null` for
   `ok`). `last_check` is `null` for a mine that has never been checked. It is kept in the cache like
   the versions. The seeded capture counts as a check at its `last_time_updated`, outcome `ok`.
-- `status` is `"Running"` when the last check succeeded, `"Unreachable"` after two consecutive
-  failed checks, `"Not checked yet"` before the first check. (A mine's first failure keeps
-  `"Running"` but is recorded in `last_check`; a mine that has never succeeded is `"Unreachable"` at
-  its first failure.) `"Not Running"` is no longer produced; an older cache or instances file with
-  it is read as `"Unreachable"`. `isProduction` is not affected.
+- `status` is `"Running"` when the last check succeeded, `"Unreachable"` when the checks have been
+  failing for more than `REGISTRY_UNREACHABLE_AFTER_HOURS` (default 24) hours, `"Not checked yet"`
+  before the first check. It is a time rule, not a count: `last_check.since` is the time of the
+  first failure of the current run, and the mine becomes Unreachable at the first failed check
+  that finds `time - since` greater than the limit (exactly 24 h is not more). Until then a failing
+  mine stays `"Running"` (a mine that has never been checked stays `"Not checked yet"`), and
+  `last_check` records each failure and its reason (the pages add a small "check failed (reason),
+  retrying" note). The next successful check clears it at once. With the 6-hourly schedule that is
+  the sixth consecutive failed check (checks at +0, +6, ... +30 h; the one at +24 h is not yet over the limit). `"Not Running"` is no longer produced; an older cache
+  or instances file with it is read as `"Unreachable"`. `isProduction` is not affected.
 - `reason` is one of `timeout`, `connection refused`, `unknown host`, `TLS error`, `http NNN` (a
   non-2xx answer, e.g. `http 503`), `bot-protection page` (an HTML answer that mentions Anubis, has
   a `<meta name="generator">` tag or a title about a challenge or verification), `html instead of
@@ -158,8 +164,8 @@ reported on `/status`. The refreshed values go to the cache file, never back int
 
 ## For mine maintainers: letting the registry check your mine
 
-The registry checks every mine every `REGISTRY_REFRESH_MINUTES` (default 60) to show its versions
-and branding and whether it answers. Each check is four plain `GET` requests, sent in parallel, with a 10 s
+The registry checks every mine every `REGISTRY_REFRESH_MINUTES` (default 360, six hours) to show
+its versions and branding and whether it answers. Each check is four plain `GET` requests, sent in parallel, with a 10 s
 timeout:
 
 ```
@@ -191,9 +197,11 @@ instead of json`), and keeps its last known versions. To let the checks through,
 
 Unreachable mines stay listed: on the home page, in `/service/instances` and on their own page,
 with the reason and the date it began (`/status` shows the reasons for every mine, the instance page
-has a "Last check" section). A single failed check is only recorded; a mine is marked Unreachable
-when two checks in a row fail, so a restart or a passing network problem does not flag it. The
-next successful check clears it. The reason on `/status` is what the registry saw, so it is the
+has a "Last check" section). The registry advertises the range of mines, not their uptime, so a
+failed check is only recorded (the mine stays Running, with a note); a mine is marked Unreachable
+when its checks have been failing for more than 24 hours (`REGISTRY_UNREACHABLE_AFTER_HOURS`), so a
+restart, a maintenance window or a passing network problem does not flag it. The next successful
+check clears it. The reason on `/status` is what the registry saw, so it is the
 first place to look if your mine is listed as Unreachable although it works in a browser.
 
 ## Migrating from the Node version (1.x)

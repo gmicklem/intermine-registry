@@ -24,8 +24,9 @@
     200 with something that is not a version has a failed check;
   - a failed check never hides a mine: the instance keeps its last known
     versions and branding, gets a `last_check` {:time :outcome :reason} and,
-    from the second consecutive failure, status \"Unreachable\" (see
-    classify-failure for the reasons);
+    only once the failures have lasted more than REGISTRY_UNREACHABLE_AFTER_HOURS
+    (24), status \"Unreachable\" (see check-state; classify-failure for the
+    reasons);
   - 10 s timeouts (the Node code used 2-5 s), a User-Agent header, at most
     `concurrency` mines at a time;
   - a failed branding call keeps the previous colors and images;
@@ -39,7 +40,7 @@
   (:import [java.io InputStream]
            [java.net ProxySelector URI]
            [java.net.http HttpClient HttpClient$Redirect HttpRequest HttpResponse$BodyHandlers]
-           [java.time Duration]
+           [java.time Duration Instant]
            [java.util.concurrent CompletableFuture Executors ScheduledExecutorService TimeUnit TimeoutException]))
 
 (def user-agent "InterMine-Registry/2.0 (+https://registry.intermine.org)")
@@ -281,25 +282,36 @@
                           (when previous " (previous copy kept)"))}))
       {:error (str "no logo (" (str/join "; " tried) ")" (when previous "; previous copy kept"))})))
 
-(def unreachable-after
-  "Consecutive failed checks before a Running mine is marked Unreachable."
-  2)
+(def default-unreachable-after-hours
+  "How long a mine's checks must have been failing before it is Unreachable
+  (REGISTRY_UNREACHABLE_AFTER_HOURS)."
+  24)
 
-(defn- check-state
-  "{:status :last_check} after this check (pure). A success: Running, outcome
-  ok. A failure is recorded in last_check at once; the status becomes
-  \"Unreachable\" at the second consecutive failure, or at the first when the
-  mine was not Running before (never checked: nothing to keep); the first
-  failure of a Running mine keeps \"Running\" (two-strikes rule). `since` is
-  the time of the first failure of the current run of failures."
-  [instance reason now]
+(defn failing-longer-than?
+  "Have the checks been failing since `since` (ISO time) for more than hours
+  at `now` (ISO time)? Pure: the times are arguments."
+  [since now hours]
+  (boolean (and since
+                (.isAfter (Instant/parse now) (.plus (Instant/parse since) (Duration/ofHours (long hours)))))))
+
+(defn check-state
+  "{:status :last_check} after this check (pure; `now` is the ISO time of the
+  check, so tests inject it). A success: Running, outcome ok. A failure is
+  recorded in last_check at once, with `since` the time of the first failure
+  of the current run of failures, and the status follows the time rule: the
+  mine becomes \"Unreachable\" only when the failures have lasted more than
+  `hours` (now minus since); until then it keeps the status it had
+  (\"Running\", or \"Not checked yet\" for a mine that has never succeeded)."
+  [instance reason now hours]
   (let [prev (:last_check instance)
         prev-failed? (= "failed" (:outcome prev))]
     (if-not reason
       {:status "Running" :last_check {:time now :outcome "ok" :reason nil :since nil}}
-      {:status (if (and (= "Running" (:status instance)) (not prev-failed?)) "Running" "Unreachable")
-       :last_check {:time now :outcome "failed" :reason reason
-                    :since (if prev-failed? (or (:since prev) (:time prev) now) now)}})))
+      (let [since (if prev-failed? (or (:since prev) (:time prev) now) now)]
+        {:status (cond (failing-longer-than? since now hours) "Unreachable"
+                       (= "Not checked yet" (:status instance)) "Not checked yet"
+                       :else "Running")
+         :last_check {:time now :outcome "failed" :reason reason :since since}}))))
 
 (defn apply-results
   "The instance updated with the fetch results (pure). Returns
@@ -307,31 +319,33 @@
   When /service/version/intermine gave a version the check succeeded and all
   values are applied; otherwise only status, last_check and last_time_updated
   change (the last known versions and branding are kept)."
-  [instance {:keys [intermine release api branding]} now]
-  (let [ok? (some? (:value intermine))
-        errors (cond-> []
-                 (:error intermine) (conj (str "/service/version/intermine: " (:error intermine)))
-                 (:error release) (conj (str "/service/version/release: " (:error release)))
-                 (:error api) (conj (str "/service/version: " (:error api)))
-                 (:error branding) (conj (str "/service/branding: " (:error branding)))
-                 (:warning branding) (conj (str "/service/branding: " (:warning branding))))
-        updated (-> (merge instance (check-state instance (when-not ok? (or (:reason intermine) "invalid version string")) now))
-                    (assoc :last_time_updated now))
-        updated (cond-> updated
-                  ok? (assoc :intermine_version (:value intermine))
-                  (and ok? (:value release)) (assoc :release_version (:value release))
-                  (and ok? (:value api)) (assoc :api_version (:value api))
-                  (and ok? (not (:error branding))) (assoc :colors (:colors branding) :images (:images branding)))
+  ([instance fetched now] (apply-results instance fetched now {}))
+  ([instance {:keys [intermine release api branding]} now {:keys [unreachable-after-hours]}]
+   (let [ok? (some? (:value intermine))
+         errors (cond-> []
+                  (:error intermine) (conj (str "/service/version/intermine: " (:error intermine)))
+                  (:error release) (conj (str "/service/version/release: " (:error release)))
+                  (:error api) (conj (str "/service/version: " (:error api)))
+                  (:error branding) (conj (str "/service/branding: " (:error branding)))
+                  (:warning branding) (conj (str "/service/branding: " (:warning branding))))
+         updated (-> (merge instance (check-state instance (when-not ok? (or (:reason intermine) "invalid version string")) now
+                                                  (or unreachable-after-hours default-unreachable-after-hours)))
+                     (assoc :last_time_updated now))
+         updated (cond-> updated
+                   ok? (assoc :intermine_version (:value intermine))
+                   (and ok? (:value release)) (assoc :release_version (:value release))
+                   (and ok? (:value api)) (assoc :api_version (:value api))
+                   (and ok? (not (:error branding))) (assoc :colors (:colors branding) :images (:images branding)))
         ;; as the Node code: a version equal to the API version is not one
-        updated (cond-> updated
-                  (and (seq (:api_version updated)) (= (:api_version updated) (:release_version updated)))
-                  (assoc :release_version "")
-                  (and (seq (:api_version updated)) (= (:api_version updated) (:intermine_version updated)))
-                  (assoc :intermine_version ""))
-        changes (vec (for [k [:status :api_version :intermine_version :release_version :colors :images]
-                           :when (not= (get instance k) (get updated k))]
-                       {:field (name k) :from (get instance k) :to (get updated k)}))]
-    {:instance updated :changes changes :errors errors}))
+         updated (cond-> updated
+                   (and (seq (:api_version updated)) (= (:api_version updated) (:release_version updated)))
+                   (assoc :release_version "")
+                   (and (seq (:api_version updated)) (= (:api_version updated) (:intermine_version updated)))
+                   (assoc :intermine_version ""))
+         changes (vec (for [k [:status :api_version :intermine_version :release_version :colors :images]
+                            :when (not= (get instance k) (get updated k))]
+                        {:field (name k) :from (get instance k) :to (get updated k)}))]
+     {:instance updated :changes changes :errors errors})))
 
 (defn refresh-instance
   "Fetches and applies; returns the apply-results map plus :checked and :ms.
@@ -339,11 +353,11 @@
   fetched and stored: :logo is the new index entry when that worked; when it
   did not, the previous copy stays and the reason is added to :errors."
   ([instance] (refresh-instance instance {}))
-  ([instance {:keys [cache-dir] :as _opts}]
+  ([instance {:keys [cache-dir] :as opts}]
    (let [t0 (System/nanoTime)
          fetched (fetch (:url instance))
          now (data/iso-now)
-         result (apply-results instance fetched now)
+         result (apply-results instance fetched now opts)
          logo (when (and cache-dir (= "ok" (get-in result [:instance :last_check :outcome])))
                 (refresh-logo (:instance result) (get-in @data/state [:logos (:namespace instance)]) cache-dir))]
      (cond-> (assoc result

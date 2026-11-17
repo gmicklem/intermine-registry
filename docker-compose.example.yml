@@ -11,7 +11,8 @@ services:
     restart: unless-stopped
     environment:
       PORT: "3000"
-      REGISTRY_REFRESH_MINUTES: "60"          # 0 disables the scheduled refresh
+      REGISTRY_REFRESH_MINUTES: "360"         # every 6 hours; 0 disables the scheduled refresh
+      REGISTRY_UNREACHABLE_AFTER_HOURS: "24"  # a mine is Unreachable after this many hours of failing checks
       REGISTRY_CACHE_DIR: /cache
       REGISTRY_BASE_URL: https://registry.intermine.org
       # REGISTRY_ADMIN_TOKEN: change-me       # enables PUT /service/synchronize
