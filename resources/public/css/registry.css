@@ -21,6 +21,7 @@
   --up: #42a94b;               /* BlueGenes @success-text-color */
   --down: #a94442;             /* BlueGenes @failure-text-color */
   --code-bg: #f2f4f6;
+  --map-land: #e3e6ea;         /* land on /map */
   color-scheme: light;
 }
 
@@ -36,6 +37,7 @@
     --code-bg: #24282d;
     --up: #5cc466;
     --down: #e06c6a;
+    --map-land: #30353b;
     color-scheme: dark;
   }
 }
@@ -52,6 +54,7 @@
   --code-bg: #24282d;
   --up: #5cc466;
   --down: #e06c6a;
+  --map-land: #30353b;
   color-scheme: dark;
 }
 
@@ -175,6 +178,22 @@ ul.plain { list-style: none; margin: 0; padding: 0; }
 ul.plain li { margin: 0 0 0.2rem; }
 ul.errors { color: var(--down); font-size: 0.875rem; }
 
+/* map: an inline SVG of 720 x 360 units (pages/world-svg); sizes in it are
+   in those units */
+.map-figure { margin: 1.5rem 0; }
+.map-hint { display: none; }
+.world-map { display: block; width: 100%; max-width: 1100px; height: auto; background: var(--bg); }
+.world-map .land { fill: var(--map-land); stroke: none; }
+.world-map circle { fill: var(--accent); stroke: var(--bg); stroke-width: 1; }
+.world-map a:hover circle, .world-map a:focus circle { fill: var(--link); }
+.world-map a:focus { outline: none; }
+.world-map a:focus-visible circle { stroke: var(--fg); stroke-width: 1.5; }
+.world-map text { font-size: 9px; fill: var(--fg); stroke: var(--bg); stroke-width: 2.5px; stroke-linejoin: round; paint-order: stroke; }
+.world-map a.label:hover text { fill: var(--link); text-decoration: underline; }
+.world-map .leader { stroke: var(--fg-soft); stroke-width: 0.6; }
+ul.inline-list { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.2rem 1.25rem; }
+.location { color: var(--fg-soft); font-size: 0.875rem; }
+
 /* docs */
 .route { border-top: 1px solid var(--line); padding-top: 0.25rem; margin-top: 2rem; }
 .route h2 { margin-top: 1rem; }
@@ -197,4 +216,8 @@ ul.errors { color: var(--down); font-size: 0.875rem; }
   table.mines td.organisms { max-width: none; }
   table.fields th { width: 8rem; }
   .params { grid-template-columns: 1fr; }
+  /* the map keeps a legible size (labels about 11 px) and scrolls sideways */
+  .map-scroll { overflow-x: auto; }
+  .world-map { width: 880px; max-width: none; }
+  .map-hint { display: block; color: var(--fg-soft); font-size: 0.8rem; margin-top: 0.3rem; }
 }

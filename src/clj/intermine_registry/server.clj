@@ -41,6 +41,7 @@
      (html (pages/home params opts {:mode :to-galaxy :url (get params "GALAXY_URL")})))
    (GET "/galaxy-to-im" {params :query-params}
      (html (pages/home params opts {:mode :from-galaxy :url (get params "URL")})))
+   (GET "/map" {params :query-params} (html (pages/map-page params opts)))
    (GET "/docs" [] (html (pages/docs opts)))
    (GET "/status" [] (html (pages/status-page opts)))
    (GET "/api-docs" [] (resp/moved-permanently "/docs"))

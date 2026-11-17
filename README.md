@@ -93,7 +93,9 @@ the route table in `src/clj/intermine_registry/api.clj`). In short:
 - `PUT /service/synchronize`, `PUT /service/synchronize/{id}`: refresh now (admin token)
 - `POST/PUT/DELETE /service/instances[/{id}]`: 405, the registry is read-only
 
-Pages: `/` (the mines, with a filter), `/instances/{namespace}`, `/docs`, `/status` (the last
+Pages: `/` (the mines, with a filter), `/instances/{namespace}`, `/map` (where the mines are: a
+world map with a dot per mine, from the `location` of its entry; production mines, all with
+`?mines=all`; see [The map](#the-map)), `/docs`, `/status` (the last
 refresh of each mine: when, what changed, what failed), and the Galaxy hand-over pages
 `/im-to-galaxy?GALAXY_URL=` and `/galaxy-to-im?URL=`. The pages follow the OS's light or dark
 setting; a System / Light / Dark switch in the header overrides it (kept in the browser's
@@ -182,7 +184,18 @@ An override whose file is missing is ignored (with a warning at start-up) and th
 fetched as usual. PlanMine has one: its branding names the generic InterMine squares on
 `cdn.rawgit.com`, so the registry carries the planarian of its front-page logo (`planmine.png`).
 
-### World map outline
+### The map
+
+`/map` draws each mine as a dot at the `latitude` and `longitude` of its `location` in
+`instances.edn` (decimal degrees, as strings), on an equirectangular world map (an inline SVG, no
+tiles, fonts or scripts from elsewhere), each dot a link to the mine's page. Mines at the same or
+nearby places (whose dots would overlap) are fanned out on a small ring, turned so each dot lies
+roughly towards its true place, with one label listing their names; labels are placed beside the
+ring where they overlap nothing else. A mine without coordinates is listed under "Not on the map".
+The instance page shows the coordinates with a "show on map" link. On a narrow screen the map
+keeps a legible size and scrolls sideways.
+
+#### World map outline
 
 The land on the `/map` page is
 [`resources/public/world-110m-land.path`](resources/public/world-110m-land.path): one SVG path
