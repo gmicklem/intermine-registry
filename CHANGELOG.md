@@ -12,7 +12,19 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   midnight), with 10 s timeouts, and every answer is validated: HTML pages (served by mines behind
   bot protection or retired mines) are no longer stored as versions; the previous value is kept and
   the problem shown on `/status`. A mine whose `/service/version/intermine` answers 200 with
-  something that is not a version is "Not Running" (it was "Running").
+  something that is not a version counts as a failed check (it was "Running").
+- A failed check no longer hides a mine. Unreachable mines stay in `GET /service/instances` and on
+  the home page, with their last known versions and branding. Each instance has a new `last_check`
+  object `{time, outcome ("ok"|"failed"), reason, since}` (reasons: `timeout`, `connection refused`,
+  `http NNN`, `bot-protection page`, `html instead of json`, `invalid version string`, ...), kept in
+  the cache. `status` is `"Running"` (last check ok), `"Unreachable"` (two consecutive failed
+  checks; the first failure is recorded in `last_check` but keeps `"Running"`) or
+  `"Not checked yet"`; `"Not Running"` is gone (an old cache reads as `"Unreachable"`). The seeded
+  capture counts as an ok check at its `last_time_updated`. `/health` gains `unreachable`.
+- Pages: grey status dot with the reason as tooltip and under the mine name on the home page; a
+  "Last check" section on instance pages with a note for maintainers whose mine answers with a
+  bot-protection page; the reasons on `/status`. README: "For mine maintainers: letting the registry
+  check your mine".
 - Requests to mines send a `User-Agent: InterMine-Registry/2.0` header (the Node app sent none,
   which bot protection such as Anubis challenges).
 - `GET /service/namespace?url=` returns the instance whose URL matches exactly (ignoring scheme,

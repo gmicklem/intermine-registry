@@ -40,10 +40,38 @@
             [:p "To add a mine or correct its details, open a pull request against "
              [:a {:href (str api/repository-url "/blob/dev/resources/instances.edn")} [:code "resources/instances.edn"]] "."]]]]))
 
-(defn- status-dot [status]
-  (let [running? (= "Running" status)]
-    [:span {:class (str "dot " (if running? "up" "down")) :title (h (or status "unknown"))}
-     [:span.sr (h (or status "unknown"))]]))
+(def maintainer-notes-url
+  "The README section for mine maintainers."
+  (str api/repository-url "/blob/dev/README.md#for-mine-maintainers-letting-the-registry-check-your-mine"))
+
+(defn- date-part [iso] (when iso (str/replace (str iso) #"T(\d\d:\d\d).*" " $1 UTC")))
+
+(defn- day-part [iso] (when iso (subs (str iso) 0 (min 10 (count (str iso))))))
+
+(defn- check-failed? [inst] (= "failed" (get-in inst [:last_check :outcome])))
+
+(defn- check-sentence
+  "A plain-language sentence about the last check of the instance."
+  [inst]
+  (let [{:keys [reason since]} (:last_check inst)]
+    (cond
+      (= "Unreachable" (:status inst))
+      (str "Unreachable since " (day-part since) (when reason (str " (" reason ")")))
+
+      (check-failed? inst)
+      (str "Running; the last check failed (" reason "), one more failed check marks it Unreachable")
+
+      (= "Not checked yet" (:status inst)) "Not checked yet"
+      :else (str (or (:status inst) "unknown")))))
+
+(defn- status-dot [inst]
+  (let [status (or (:status inst) "unknown")
+        css (case status "Running" "up" "Unreachable" "unreachable" "unknown")
+        text (check-sentence inst)]
+    [:span {:class (str "dot " css) :title (h text)}
+     [:span.sr (h text)]]))
+
+(defn- bot-reason? [reason] (contains? #{"bot-protection page" "html instead of json"} reason))
 
 (defn- logo
   "The mine's logo over a neutral mark (its initial), which shows when there
@@ -63,8 +91,6 @@
       [:span {:title (h (str/join ", " organisms))}
        (h (str/join ", " (take organisms-shown organisms)))
        [:span.muted (str " and " (- n organisms-shown) " more")]])))
-
-(defn- date-part [iso] (when iso (str/replace (str iso) #"T(\d\d:\d\d).*" " $1 UTC")))
 
 (defn- mines-param [params] (get params "mines"))
 
@@ -114,14 +140,16 @@
                (for [inst insts]
                  [:tr {:data-search (h (str/lower-case (str/join " " (concat [(:name inst) (:namespace inst) (:maintainerOrgName inst) (:description inst)]
                                                                              (:organisms inst)))))}
-                  [:td (status-dot (:status inst))]
+                  [:td (status-dot inst)]
                   [:td [:div.mine (logo inst)
                         [:span
                          [:a.name {:href (if (and to-galaxy? (safe-url (:url inst)))
                                            (str (:url inst) "/begin.do?GALAXY_URL=" (java.net.URLEncoder/encode ^String galaxy-url "UTF-8"))
                                            (safe-url (:url inst)))}
                           (h (:name inst))]
-                         (when-not (:isProduction inst) [:span.tag "dev"])]]]
+                         (when-not (:isProduction inst) [:span.tag "dev"])
+                         (when (= "Unreachable" (:status inst))
+                           [:span.unreachable-note (h (check-sentence inst))])]]]
                   [:td [:a {:href (str "/instances/" (h (:namespace inst)))} [:code (h (:namespace inst))]]]
                   [:td.organisms (organisms-cell (:organisms inst))]
                   [:td.nowrap (h (:intermine_version inst))]
@@ -170,6 +198,30 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
 (defn- field-row [label value]
   [:tr [:th {:scope "row"} label] [:td value]])
 
+(defn- last-check-block [inst]
+  (let [{:keys [time outcome reason since] :as check} (:last_check inst)]
+    [:section.last-check
+     [:h2 "Last check"]
+     (if-not check
+       [:p "The registry has not checked this mine yet."]
+       [:table.fields
+        [:tbody
+         (field-row "Time" (h (date-part time)))
+         (field-row "Outcome" (h outcome))
+         (when reason (field-row "Reason" (h reason)))
+         (when (and (= "Unreachable" (:status inst)) since)
+           (field-row "Unreachable since" (h (date-part since))))]])
+     (when (check-failed? inst)
+       [:p.notice
+        (if (bot-reason? reason)
+          [:span "For the maintainer of this mine: the registry's request was answered with a web page instead of "
+           "the version number, usually by bot protection such as Anubis. Please let the registry's checks through: "
+           [:a {:href maintainer-notes-url} "how to do it"] "."]
+          [:span "The registry could not get a version from this mine. If the mine is up, see "
+           [:a {:href maintainer-notes-url} "what the registry's checks need"] "."])])
+     [:p.soft "A mine stays listed when a check fails, with its last known versions and branding; "
+      "it is marked Unreachable after two failed checks in a row."]]))
+
 (defn instance-page [ns opts]
   (when-let [inst (api/find-instance (data/instances) ns)]
     (let [result (get-in @data/state [:refresh :results (:namespace inst)])
@@ -177,7 +229,7 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
           url (safe-url (:url inst))]
       (layout {:title (:name inst)}
               [:p.crumbs [:a {:href "/"} "Mines"] " / " (h (:name inst))]
-              [:h1.with-logo (logo inst) (h (:name inst)) " " (status-dot (:status inst))]
+              [:h1.with-logo (logo inst) (h (:name inst)) " " (status-dot inst)]
               (when-not (str/blank? (:description inst)) [:p.lead (h (str/trim (:description inst)))])
               [:p.links
                (when url [:a.button {:href url} "Open the mine"])
@@ -186,7 +238,7 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                [:a {:href (str "/" (h (:namespace inst)))} [:code (str (:base-url opts) "/" (h (:namespace inst)))]]]
               [:table.fields
                [:tbody
-                (field-row "Status" (h (:status inst)))
+                (field-row "Status" (h (check-sentence inst)))
                 (field-row "Namespace" [:code (h (:namespace inst))])
                 (field-row "Id" [:code (h (:id inst))])
                 (field-row "URL" (if url [:a {:href url} (h url)] (h (:url inst))))
@@ -212,6 +264,7 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 (field-row "Last checked" (h (date-part (:last_time_updated inst))))
                 (when (seq (:errors result))
                   (field-row "Last refresh problems" [:ul.plain (for [e (:errors result)] [:li (h e)])]))]]
+              (last-check-block inst)
               [:h2 "JSON"]
               [:p "As served at " [:a {:href json-path} [:code json-path]] ":"]
               [:pre.json (h (json/generate-string (api/instance->json inst) {:pretty true}))]))))
@@ -250,8 +303,11 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                [:p "The fields of an instance, as in " [:code "/service/instances"] " and "
                 [:code "/service/instances/{id}"] ". "
                 [:code "api_version"] ", " [:code "intermine_version"] ", " [:code "release_version"] ", "
-                [:code "status"] ", " [:code "colors"] ", " [:code "images"] " and " [:code "last_time_updated"]
-                " are refreshed from the mine; the rest come from the instances file."]
+                [:code "status"] ", " [:code "last_check"] ", " [:code "colors"] ", " [:code "images"] " and " [:code "last_time_updated"]
+                " are refreshed from the mine; the rest come from the instances file. "
+                [:code "status"] " is " [:code "Running"] ", " [:code "Unreachable"] " (the last two checks failed) or "
+                [:code "Not checked yet"] "; " [:code "last_check"] " is "
+                [:code "{time, outcome (ok|failed), reason, since}"] ". Unreachable mines stay in the list."]
                [:pre.json (h (json/generate-string example {:pretty true}))]]))))
 
 (defn status-page [opts]
@@ -265,17 +321,26 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
              (if last-run
                (str "Last complete run: " (date-part (:finished last-run)) " (" (:count last-run) " mines).")
                "No run since the cache was created; the values shown are the initial ones from the instances file.")]
+            [:p "A failed check never removes a mine from the registry: it keeps its last known versions and "
+             "branding and the reason is shown here. After two failed checks in a row the mine is marked "
+             [:strong "Unreachable"] ". Reasons: " [:code "timeout"] ", " [:code "connection refused"] ", "
+             [:code "http NNN"] ", " [:code "bot-protection page"] ", " [:code "html instead of json"] ", "
+             [:code "invalid version string"] ". Mine maintainers: "
+             [:a {:href maintainer-notes-url} "letting the registry check your mine"] "."]
             [:div.table-scroll
              [:table.status
-              [:thead [:tr [:th [:span.sr "Status"]] [:th "Mine"] [:th "Checked"] [:th "Changed"] [:th "Problems"]]]
+              [:thead [:tr [:th [:span.sr "Status"]] [:th "Mine"] [:th "Checked"] [:th "Last check"] [:th "Changed"] [:th "Problems"]]]
               [:tbody
                (for [inst insts
                      :let [r (get results (:namespace inst))]]
                  [:tr
-                  [:td (status-dot (:status inst))]
+                  [:td (status-dot inst)]
                   [:td [:a {:href (str "/instances/" (h (:namespace inst)))} (h (:name inst))]]
                   [:td.when (h (or (date-part (:checked r)) "not yet"))
                    (when (:ms r) [:span.muted (str " (" (:ms r) " ms)")])]
+                  [:td (if (check-failed? inst)
+                         [:span.errors (h (str (check-sentence inst)))]
+                         "ok")]
                   [:td (if (seq (:changes r))
                          [:ul.plain (for [{:keys [field from to]} (:changes r)]
                                       [:li [:code (h field)] " " (h (json/generate-string from)) " → " (h (json/generate-string to))])]

@@ -108,6 +108,12 @@ td.when, .muted { color: var(--fg-soft); font-size: 0.875rem; white-space: nowra
 .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; vertical-align: middle; }
 .dot.up { background: var(--up); }
 .dot.down { background: var(--down); }
+.dot.unreachable { background: #9aa0a6; }
+.dot.unknown { background: transparent; border: 2px solid #9aa0a6; box-sizing: border-box; }
+.unreachable-note { display: block; font-size: 0.8rem; color: var(--fg-soft); font-weight: 400; }
+.notice { max-width: 46rem; }
+.soft { color: var(--fg-soft); font-size: 0.875rem; max-width: 46rem; }
+.last-check { margin-top: 1.5rem; }
 
 .tag { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; font-size: 0.72rem; border: 1px solid var(--line); border-radius: 3px; color: var(--fg-soft); vertical-align: middle; }
 

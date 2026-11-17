@@ -61,3 +61,50 @@
     (is (str/includes? body "https://www.flymine.org/flymine/portal.do"))
     (is (str/includes? body "Send to FlyMine"))
     (is (str/includes? body "\"https://usegalaxy.org/datasets/1/display\""))))
+
+(defn- make-unreachable! [ns reason]
+  (swap! intermine-registry.data/state update :instances
+         (fn [insts] (mapv #(if (= ns (:namespace %))
+                              (assoc % :status "Unreachable"
+                                     :last_check {:time "2026-11-18T10:00:00.000Z" :outcome "failed"
+                                                  :reason reason :since "2026-11-17T09:00:00.000Z"})
+                              %)
+                           insts))))
+
+(deftest unreachable-mine-shows-the-reason
+  (make-unreachable! "flymine" "bot-protection page")
+  (let [home (page "/")
+        inst (page "/instances/flymine")
+        status (page "/status")]
+    (is (str/includes? home "FlyMine") "still on the home page")
+    (is (str/includes? home "Unreachable since 2026-11-17 (bot-protection page)"))
+    (is (str/includes? home "class=\"dot unreachable\""))
+    (is (str/includes? inst "Last check"))
+    (is (str/includes? inst "bot-protection page"))
+    (is (str/includes? inst "2026-11-18 10:00 UTC"))
+    (is (str/includes? inst "For the maintainer of this mine"))
+    (is (str/includes? inst "README.md#for-mine-maintainers-letting-the-registry-check-your-mine"))
+    (is (str/includes? status "Unreachable since 2026-11-17 (bot-protection page)")))
+  (testing "other reasons: no bot-protection hint, still a pointer"
+    (make-unreachable! "flymine" "timeout")
+    (let [inst (page "/instances/flymine")]
+      (is (str/includes? inst "timeout"))
+      (is (not (str/includes? inst "Anubis")))
+      (is (str/includes? inst "what the registry's checks need"))))
+  (testing "a healthy mine has no notice"
+    (u/load-bundled!)
+    (let [inst (page "/instances/mousemine")]
+      (is (str/includes? inst "Last check"))
+      (is (not (str/includes? inst "For the maintainer")))
+      (is (not (str/includes? (page "/") "Unreachable since"))))))
+
+(deftest first-failure-is-running-with-the-failure-visible
+  (swap! intermine-registry.data/state update :instances
+         (fn [insts] (mapv #(if (= "flymine" (:namespace %))
+                              (assoc % :last_check {:time "2026-11-18T10:00:00.000Z" :outcome "failed"
+                                                    :reason "http 503" :since "2026-11-18T10:00:00.000Z"})
+                              %)
+                           insts)))
+  (let [inst (page "/instances/flymine")]
+    (is (str/includes? inst "Running; the last check failed (http 503)"))
+    (is (not (str/includes? (page "/") "Unreachable since")))))

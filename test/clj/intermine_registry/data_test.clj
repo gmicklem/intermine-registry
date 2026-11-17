@@ -66,3 +66,48 @@
 (deftest time-formats
   (is (re-matches #"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z" (data/iso-now)))
   (is (= "2026-11-17T00:00:00.000Z" (data/iso-now (java.time.Instant/parse "2026-11-17T00:00:00Z")))))
+
+(deftest normalize-instance-statuses
+  (let [n data/normalize-instance]
+    (testing "the seeded capture counts as an ok check at last_time_updated"
+      (is (= {:status "Running" :last_time_updated "2026-11-17T00:00:32.310Z"
+              :last_check {:time "2026-11-17T00:00:32.310Z" :outcome "ok" :reason nil :since nil}}
+             (n {:status "Running" :last_time_updated "2026-11-17T00:00:32.310Z"}))))
+    (testing "never checked"
+      (is (= {:status "Not checked yet" :last_check nil} (n {})))
+      (is (= "Not checked yet" (:status (n {:status "Running"}))) "no check time, no check"))
+    (testing "legacy Not Running becomes Unreachable with a failed check"
+      (let [r (n {:status "Not Running" :last_time_updated "2026-11-17T00:00:32.310Z"})]
+        (is (= "Unreachable" (:status r)))
+        (is (= "failed" (get-in r [:last_check :outcome])))
+        (is (= "2026-11-17T00:00:32.310Z" (get-in r [:last_check :since])))))
+    (testing "an existing last_check is kept"
+      (let [i {:status "Unreachable" :last_check {:time "2026-11-17T00:00:32.310Z" :outcome "failed" :reason "timeout" :since "2026-11-16T00:00:00.000Z"}}]
+        (is (= i (n i)))))))
+
+(deftest loaded-instances-have-status-and-last-check
+  (data/load! {})
+  (is (every? #(= "Running" (:status %)) (data/instances)))
+  (is (every? #(= "ok" (get-in % [:last_check :outcome])) (data/instances)))
+  (is (every? #(= (:last_time_updated %) (get-in % [:last_check :time])) (data/instances))))
+
+(deftest cache-keeps-last-check-and-migrates-the-old-status
+  (let [dir (.toFile (java.nio.file.Files/createTempDirectory "registry-cache" (make-array java.nio.file.attribute.FileAttribute 0)))
+        check {:time "2026-11-18T10:00:00.000Z" :outcome "failed" :reason "timeout" :since "2026-11-18T09:00:00.000Z"}]
+    (try
+      (data/load! {})
+      (swap! data/state update :instances (fn [is] (mapv #(case (:namespace %)
+                                                            "flymine" (assoc % :status "Unreachable" :last_check check)
+                                                            %) is)))
+      (data/write-cache! dir @data/state)
+      (data/load! {:cache-dir dir})
+      (let [fly (first (filter #(= "flymine" (:namespace %)) (data/instances)))]
+        (is (= "Unreachable" (:status fly)))
+        (is (= check (:last_check fly)) "last_check survives a restart"))
+      (testing "a cache written before last_check existed (status Not Running)"
+        (spit (data/cache-file dir) (pr-str {:instances {"flymine" {:status "Not Running" :last_time_updated "2026-11-17T05:00:00.000Z"}}}))
+        (data/load! {:cache-dir dir})
+        (let [fly (first (filter #(= "flymine" (:namespace %)) (data/instances)))]
+          (is (= "Unreachable" (:status fly)))
+          (is (= "failed" (get-in fly [:last_check :outcome])))))
+      (finally (doseq [f (reverse (file-seq dir))] (.delete ^File f))))))
