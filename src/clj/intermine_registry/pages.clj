@@ -6,7 +6,8 @@
             [hiccup.core :refer [h]]
             [hiccup.page :refer [html5]]
             [intermine-registry.api :as api]
-            [intermine-registry.data :as data]))
+            [intermine-registry.data :as data]
+            [intermine-registry.logos :as logos]))
 
 (defn- safe-url
   "url if it is http(s), else nil (mine-supplied values end up in src/href)."
@@ -74,13 +75,14 @@
 (defn- bot-reason? [reason] (contains? #{"bot-protection page" "html instead of json"} reason))
 
 (defn- logo
-  "The mine's logo over a neutral mark (its initial), which shows when there
-  is no logo or it does not load."
+  "The registry's copy of the mine's logo (/instances/{namespace}/logo) over
+  a neutral mark (its initial), which shows when the registry holds no logo
+  yet or it does not load. The pages never point at the mine's own host."
   [inst]
   [:span.logo {:aria-hidden "true"}
    [:span.placeholder (h (subs (str (:name inst) "?") 0 1))]
-   (when-let [src (safe-url (get-in inst [:images :logo]))]
-     [:img {:src src :alt "" :loading "lazy" :onerror "this.remove()"}])])
+   (when (logos/cached? (:namespace inst))
+     [:img {:src (logos/logo-path (:namespace inst)) :alt "" :loading "lazy" :onerror "this.remove()"}])])
 
 (def ^:private organisms-shown 6)
 
@@ -257,9 +259,13 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 (field-row "Location" (let [{:keys [latitude longitude]} (:location inst)]
                                         (if (str/blank? latitude) "" (h (str latitude ", " longitude)))))
                 (field-row "Colours" (or (seq (swatches (:colors inst))) ""))
-                (field-row "Logo" (if-let [u (safe-url (get-in inst [:images :logo]))]
-                                    [:span [:img.big-logo {:src u :alt (str (h (:name inst)) " logo") :onerror "this.remove()"}] " " [:code (h u)]]
-                                    ""))
+                (field-row "Logo" (let [u (safe-url (get-in inst [:images :logo]))]
+                                    (cond
+                                      (logos/cached? (:namespace inst))
+                                      [:span [:img.big-logo {:src (logos/logo-path (:namespace inst)) :alt (str (h (:name inst)) " logo") :onerror "this.remove()"}]
+                                       (when u [:span " " [:code (h u)]])]
+                                      u [:code (h u)]
+                                      :else "")))
                 (field-row "Added" (h (date-part (:created_at inst))))
                 (field-row "Last checked" (h (date-part (:last_time_updated inst))))
                 (when (seq (:errors result))
@@ -267,13 +273,13 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
               (last-check-block inst)
               [:h2 "JSON"]
               [:p "As served at " [:a {:href json-path} [:code json-path]] ":"]
-              [:pre.json (h (json/generate-string (api/instance->json inst) {:pretty true}))]))))
+              [:pre.json (h (json/generate-string (api/instance->json inst opts) {:pretty true}))]))))
 
 (defn docs [opts]
   (let [base (:base-url opts)
         example (some-> (first (filter #(= "flymine" (:namespace %)) (data/instances)))
-                        api/instance->json)
-        example (or example (some-> (first (data/instances)) api/instance->json))]
+                        (api/instance->json opts))
+        example (or example (some-> (first (data/instances)) (api/instance->json opts)))]
     (layout {:title "API" :active :docs}
             [:h1 "API"]
             [:p "Every answer is JSON (" [:code "application/json; charset=utf-8"] ") with "
@@ -307,7 +313,9 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 " are refreshed from the mine; the rest come from the instances file. "
                 [:code "status"] " is " [:code "Running"] ", " [:code "Unreachable"] " (the last two checks failed) or "
                 [:code "Not checked yet"] "; " [:code "last_check"] " is "
-                [:code "{time, outcome (ok|failed), reason, since}"] ". Unreachable mines stay in the list."]
+                [:code "{time, outcome (ok|failed), reason, since}"] ". Unreachable mines stay in the list. "
+                [:code "images.logo"] " is the mine's own logo URL; " [:code "images.logo_cached"]
+                " (when present) is the registry's copy of it, served from " [:code "/instances/{namespace}/logo"] "."]
                [:pre.json (h (json/generate-string example {:pretty true}))]]))))
 
 (defn status-page [opts]

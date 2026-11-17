@@ -37,6 +37,14 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
 - New pages: `/` (mines table with filter), `/instances/{namespace}`, `/docs` (API documentation
   generated from the route table; `/api-docs` redirects there), `/status`. `/im-to-galaxy` and
   `/galaxy-to-im` keep working.
+- Logos and favicons are cached by the registry: after a successful check it fetches the mine's
+  `images.logo` (then `{url}/model/images/favicon.ico`, then `{url}/favicon.ico`; image content
+  types only, at most 512 KB), stores it under `REGISTRY_CACHE_DIR/logos/<namespace>.<ext>`
+  (indexed in the cache EDN; a failed fetch keeps the previous copy) and serves it at
+  `GET /instances/{namespace}/logo` (`Cache-Control: public, max-age=86400`). The pages use that
+  path instead of the mines' own hosts and show the initial mark until the registry holds a logo.
+  Instances in the API gain `images.logo_cached` (absolute, from `REGISTRY_BASE_URL`) when a logo is
+  held; `images.logo` is unchanged. The logo is shown on a light tile in both themes.
 - New: `GET /health`, Dockerfile, Compose example, GitHub Actions CI.
 
 ### Removed

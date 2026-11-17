@@ -6,6 +6,7 @@
   '[intermine-registry.data-test
     intermine-registry.api-test
     intermine-registry.refresh-test
+    intermine-registry.logos-test
     intermine-registry.pages-test])
 
 (defn -main [& _]

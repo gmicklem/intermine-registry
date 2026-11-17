@@ -111,6 +111,28 @@
          #(empty? (duplicates (map (comp str/lower-case :namespace) %)))
          #(empty? (duplicates (map :id %)))))
 
+(def logo-content-types
+  "The image content types the registry caches as a mine's logo, with the
+  file extension each is stored under."
+  {"image/png" "png"
+   "image/jpeg" "jpg"
+   "image/gif" "gif"
+   "image/svg+xml" "svg"
+   "image/x-icon" "ico"
+   "image/vnd.microsoft.icon" "ico"})
+
+(defn valid-logo-entry?
+  "Is e an entry of the logo index {:file \"flymine.png\" :content-type \"image/png\"
+  :source url :fetched iso :bytes n :sha1 hex}? The cache is not trusted
+  blindly: :file is a plain file name, never a path."
+  [e]
+  (boolean (and (map? e)
+                (string? (:file e))
+                (re-matches #"[A-Za-z0-9][A-Za-z0-9._-]*\.(png|jpg|gif|svg|ico)" (:file e))
+                (contains? logo-content-types (:content-type e))
+                (or (nil? (:source e)) (string? (:source e)))
+                (or (nil? (:fetched e)) (iso-timestamp? (:fetched e))))))
+
 (def fixed-keys
   "The hand-maintained keys, in file order."
   [:id :name :namespace :url :description :organisms :neighbours :location
@@ -168,10 +190,11 @@
 ;; ---------------------------------------------------------------- state
 
 (defonce ^{:doc "{:instances [instance ...]   ; file order, refreshed fields merged in
+            :logos {namespace {:file :content-type :source :fetched :bytes :sha1}} ; the cached logos
             :refresh {:last-run {:started iso :finished iso :count n}
                       :results {namespace {:checked iso :status s :changes [...] :errors [...]}}}}"}
   state
-  (atom {:instances [] :refresh {}}))
+  (atom {:instances [] :refresh {} :logos {}}))
 
 (defn instances [] (:instances @state))
 
@@ -220,14 +243,15 @@
   "Writes the refreshed values and the last refresh results to dir
   (atomically: a temporary file then a rename). Logs and returns nil on
   failure: the cache is a convenience, the registry works without it."
-  [dir {:keys [instances refresh]}]
+  [dir {:keys [instances refresh logos]}]
   (try
     (let [f (cache-file dir)
           tmp (io/file dir "registry-cache.edn.tmp")]
       (.mkdirs (io/file dir))
       (spit tmp (pr-str {:saved-at (iso-now)
                          :instances (into {} (map (juxt :namespace #(select-keys % refreshed-keys))) instances)
-                         :refresh refresh}))
+                         :refresh refresh
+                         :logos (or logos {})}))
       (Files/move (.toPath tmp) (.toPath f)
                   (into-array [StandardCopyOption/REPLACE_EXISTING StandardCopyOption/ATOMIC_MOVE]))
       f)
@@ -264,6 +288,7 @@
   (let [instances (read-instances instances-file)
         cache (when cache-dir (read-cache cache-dir))]
     (reset! state {:instances (mapv normalize-instance (merge-cache instances cache))
-                   :refresh (or (:refresh cache) {})})
+                   :refresh (or (:refresh cache) {})
+                   :logos (into {} (filter (fn [[k v]] (and (string? k) (valid-logo-entry? v)))) (:logos cache))})
     (log/info "Loaded" (count instances) "instances" (if cache "and the cache" "(no cache yet)"))
     @state))
