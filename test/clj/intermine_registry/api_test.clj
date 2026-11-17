@@ -22,11 +22,23 @@
    "repetdbmine" #{"api_version" "intermine_version" "release_version"}
    "wheatmine" #{"api_version" "intermine_version" "release_version"}})
 
+(def corrected
+  "URLs that were wrong or stale in the capture and are corrected in
+  instances.edn (namespace -> key -> value), see the CHANGELOG."
+  {"alliancemine" {"url" "https://alliancemine.alliancegenome.org/alliancemine"}
+   "oakmine" {"url" "https://urgi.versailles.inrae.fr/OakMine_PM1N"
+              "maintainerUrl" "https://urgi.versailles.inrae.fr/"}
+   "repetdbmine" {"url" "https://urgi.versailles.inrae.fr/repetdb"
+                  "maintainerUrl" "https://urgi.versailles.inrae.fr/"}
+   "wheatmine" {"url" "https://urgi.versailles.inrae.fr/WheatMine"
+                "maintainerUrl" "https://urgi.versailles.inrae.fr/"}})
+
 (defn- expected-instance [captured]
   (let [ns (get captured "namespace")]
-    (reduce (fn [m k] (assoc m k ""))
-            (apply dissoc captured dropped-keys)
-            (cleaned ns))))
+    (merge (reduce (fn [m k] (assoc m k ""))
+                   (apply dissoc captured dropped-keys)
+                   (cleaned ns))
+           (corrected ns))))
 
 (deftest instances-envelope-and-fields
   (let [captured (u/capture "instances.json")
