@@ -22,10 +22,19 @@
    "repetdbmine" #{"api_version" "intermine_version" "release_version"}
    "wheatmine" #{"api_version" "intermine_version" "release_version"}})
 
+(def missouri
+  "The Elsik Lab, University of Missouri (HymenopteraMine's and MaizeMine's
+  location in the capture)."
+  {"latitude" "38.940397" "longitude" "-92.327813"})
+
 (def corrected
-  "URLs that were wrong or stale in the capture and are corrected in
-  instances.edn (namespace -> key -> value), see the CHANGELOG."
-  {"alliancemine" {"url" "https://alliancemine.alliancegenome.org/alliancemine"}
+  "URLs that were wrong or stale in the capture, and locations that were
+  blank, corrected in instances.edn (namespace -> key -> value), see the
+  CHANGELOG."
+  {"alliancemine" {"url" "https://alliancemine.alliancegenome.org/alliancemine"
+                   "location" {"latitude" "37.428265" "longitude" "-122.169498"}}
+   "aquaMine" {"location" missouri}
+   "faangmine" {"location" missouri}
    "oakmine" {"url" "https://urgi.versailles.inrae.fr/OakMine_PM1N"
               "maintainerUrl" "https://urgi.versailles.inrae.fr/"}
    "repetdbmine" {"url" "https://urgi.versailles.inrae.fr/repetdb"

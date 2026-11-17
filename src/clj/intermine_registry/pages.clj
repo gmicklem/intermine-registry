@@ -2,6 +2,7 @@
   "Server-rendered pages (Hiccup 1; text is escaped with h, attributes are
   escaped by Hiccup)."
   (:require [cheshire.core :as json]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [hiccup.core :refer [h]]
             [hiccup.page :refer [html5]]
@@ -79,7 +80,7 @@
             [:a.brand {:href "/"} [:span.mark "IM"] "InterMine Registry"]
             [:div.header-end
              [:nav
-              (for [[href label k] [["/" "Mines" :home] ["/docs" "API" :docs] ["/status" "Status" :status]]]
+              (for [[href label k] [["/" "Mines" :home] ["/map" "Map" :map] ["/docs" "API" :docs] ["/status" "Status" :status]]]
                 [:a {:href href :class (when (= k active) "active")} label])]
              (theme-switch)]]]
           [:main.wrap body]
@@ -253,6 +254,233 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
   });
 })();"])))
 
+;; The world map (/map): an inline SVG, 720 x 360 units, land from
+;; resources/public/world-110m-land.path (scripts/make-world-path.py), a dot
+;; per mine with coordinates. Mines at (or near) one place are fanned out in a
+;; small ring and get one label listing their names.
+
+(def map-width 720)
+(def map-height 360)
+
+(defn project
+  "[x y] on the /map canvas of latitude lat and longitude lon (degrees): the
+  equirectangular projection of scripts/make-world-path.py, x = (lon + 180) *
+  2, y = (90 - lat) * 2."
+  [lat lon]
+  [(* 2.0 (+ (double lon) 180.0)) (* 2.0 (- 90.0 (double lat)))])
+
+(defn coordinates
+  "[lat lon] (doubles) of the mine's :location (strings in instances.edn),
+  nil when blank or not a position."
+  [inst]
+  (let [{:keys [latitude longitude]} (:location inst)
+        num #(when (string? %) (parse-double (str/trim %)))
+        lat (num latitude)
+        lon (num longitude)]
+    (when (and lat lon (<= -90.0 lat 90.0) (<= -180.0 lon 180.0)) [lat lon])))
+
+(defn- map-href
+  "The /map link for the mine (with ?mines=all for a non-production mine),
+  pointing at its dot."
+  [inst]
+  (str "/map" (when-not (:isProduction inst) "?mines=all") "#mine-" (:namespace inst)))
+
+(def ^:private land-path
+  (delay (some-> (io/resource "public/world-110m-land.path") slurp str/trim)))
+
+(def ^:private dot-r 4.5)
+(def ^:private dot-spacing
+  "Centre distance of neighbouring dots in a ring (they overlap a little; the
+  surface-coloured stroke separates them)."
+  7.0)
+(def ^:private font-size 9.0)
+(def ^:private line-height 10.5)
+
+(defn- ring-radius [n]
+  (if (<= n 1) 0.0 (/ dot-spacing (* 2.0 (Math/sin (/ Math/PI n))))))
+
+(defn- make-cluster [members]
+  {:members (vec members)
+   :cx (/ (reduce + (map :x members)) (count members))
+   :cy (/ (reduce + (map :y members)) (count members))})
+
+(defn- extent
+  "The radius of the cluster's ring of dots, dots included."
+  [c]
+  (+ (ring-radius (count (:members c))) dot-r))
+
+(defn- clusters
+  "Groups the placed mines ({:inst :x :y}) so that no two rings of dots
+  overlap: starting with one cluster per mine, merges the pair that overlaps
+  most (centre distance less than the sum of the extents plus 1 unit) until
+  none does. Mines at one place always end up together."
+  [placed]
+  (loop [cs (mapv #(make-cluster [%]) placed)]
+    (let [overlaps (for [i (range (count cs)) j (range (inc i) (count cs))
+                         :let [a (cs i) b (cs j)
+                               room (- (Math/hypot (- (:cx a) (:cx b)) (- (:cy a) (:cy b)))
+                                       (+ (extent a) (extent b) 1.0))]
+                         :when (neg? room)]
+                     [room i j])]
+      (if-let [[_ i j] (first (sort overlaps))]
+        (recur (conj (vec (keep-indexed (fn [k c] (when-not (#{i j} k) c)) cs))
+                     (make-cluster (concat (:members (cs i)) (:members (cs j))))))
+        (vec (sort-by (juxt :cx :cy) cs))))))
+
+(defn- fan
+  "The cluster's members with the position of their dot (:dx :dy): a single
+  mine at its place; several on a ring round the cluster's centre, the ring
+  turned so that each dot lies roughly in the direction of its true place
+  (mines at one place side by side, alphabetically)."
+  [{:keys [members cx cy]}]
+  (let [n (count members)]
+    (if (= 1 n)
+      [(assoc (first members) :dx cx :dy cy)]
+      (let [r (ring-radius n)
+            step (/ (* 2.0 Math/PI) n)
+            bearing (fn [{:keys [x y]}]
+                      (when (> (Math/hypot (- x cx) (- y cy)) 0.25)
+                        (Math/atan2 (- y cy) (- x cx))))
+            ms (sort-by (juxt #(or (bearing %) 0.0) (comp str/lower-case :name :inst)) members)
+            turns (keep-indexed (fn [i m] (some-> (bearing m) (- (* i step)))) ms)
+            sx (reduce + (map #(Math/cos %) turns))
+            sy (reduce + (map #(Math/sin %) turns))
+            a0 (if (< (Math/hypot sx sy) 1e-6)
+                 (if (= 2 n) Math/PI (- (/ Math/PI 2.0)))
+                 (Math/atan2 sy sx))]
+        (map-indexed (fn [i m]
+                       (let [a (+ a0 (* i step))]
+                         (assoc m :dx (+ cx (* r (Math/cos a))) :dy (+ cy (* r (Math/sin a))))))
+                     ms)))))
+
+(defn- text-width
+  "An estimate of the width of s at the label font size (system-ui averages
+  about 0.55 em a character)."
+  [s]
+  (* 0.56 font-size (count s)))
+
+(defn- overlap [[ax ay aw ah] [bx by bw bh]]
+  (* (max 0.0 (- (min (+ ax aw) (+ bx bw)) (max ax bx)))
+     (max 0.0 (- (min (+ ay ah) (+ by bh)) (max ay by)))))
+
+(defn- label-candidates
+  "Places for a w x h label block round the cluster, in order of preference:
+  right, left, the four diagonals, above, below; then the same further out
+  (drawn with a leader line). :box is [x y w h]."
+  [{:keys [cx cy] :as c} w h]
+  (for [[far? extra] [[false 0.0] [true 16.0]]
+        :let [r (+ (extent c) 2.5 extra)
+              d (* 0.72 r)]
+        [anchor x y] [["start" (+ cx r) (- cy (/ h 2))]
+                      ["end" (- cx r w) (- cy (/ h 2))]
+                      ["start" (+ cx d) (- cy d h)]
+                      ["start" (+ cx d) (+ cy d)]
+                      ["end" (- cx d w) (- cy d h)]
+                      ["end" (- cx d w) (+ cy d)]
+                      ["middle" (- cx (/ w 2)) (- cy r h)]
+                      ["middle" (- cx (/ w 2)) (+ cy r)]]]
+    {:anchor anchor :box [x y w h] :far? far?}))
+
+(defn- place-labels
+  "Adds a :label to each cluster (with its :dots, see fan): the candidate
+  place that overlaps the labels placed so far, every ring of dots and the
+  canvas edge least (clusters with the longest labels first)."
+  [cs]
+  (let [disc (fn [c] (let [e (extent c)] [(- (:cx c) e) (- (:cy c) e) (* 2 e) (* 2 e)]))
+        discs (map disc cs)
+        canvas [0.0 0.0 (double map-width) (double map-height)]
+        order (sort-by (fn [i] [(- (count (:members (cs i)))) (:cx (cs i))]) (range (count cs)))]
+    (loop [[i & more] order, placed [], cs cs]
+      (if-not i
+        cs
+        (let [c (cs i)
+              ;; top to bottom as the dots, so each name sits by its dot
+              names (map (comp :name :inst) (sort-by (juxt #(Math/round (* 10.0 (:dy %))) (comp str/lower-case :name :inst)) (:dots c)))
+              w (+ 2.0 (apply max (map text-width names)))
+              h (* line-height (count names))
+              cost (fn [k {:keys [box far?]}]
+                     (+ (* 10 (reduce + (map #(overlap box %) (concat placed discs))))
+                        (* 10 (- (* w h) (overlap box canvas)))
+                        (if far? 40 0)
+                        k))
+              best (apply min-key (fn [[k cand]] (cost k cand))
+                          (map-indexed vector (label-candidates c w h)))
+              label (assoc (second best) :names names)]
+          (recur more (conj placed (:box label)) (assoc cs i (assoc c :label label))))))))
+
+(defn- n1
+  "x with one decimal (Locale/ROOT: always a point)."
+  [x]
+  (String/format java.util.Locale/ROOT "%.1f" (object-array [(double x)])))
+
+(defn- mine-path [inst] (str "/instances/" (:namespace inst)))
+
+(defn- world-svg [cs]
+  [:svg.world-map {:viewBox (str "0 0 " map-width " " map-height) :width "100%"
+                   :role "group" :aria-labelledby "map-title"}
+   [:title#map-title "Where the mines are"]
+   (when-let [d @land-path] [:path.land {:d d}])
+   (for [{:keys [cx cy] :as c} cs
+         :let [{:keys [far?] [x y w h] :box} (:label c)]
+         :when far?
+         :let [;; nearest point of the label box, and the edge of the ring towards it
+               px (max x (min cx (+ x w)))
+               py (max y (min cy (+ y h)))
+               len (max 1e-6 (Math/hypot (- px cx) (- py cy)))
+               e (+ (extent c) 1.0)]]
+     [:line.leader {:x1 (n1 (+ cx (* e (/ (- px cx) len)))) :y1 (n1 (+ cy (* e (/ (- py cy) len))))
+                    :x2 (n1 px) :y2 (n1 py)}])
+   (for [c cs
+         {:keys [inst dx dy]} (:dots c)]
+     [:a {:href (mine-path inst) :id (str "mine-" (:namespace inst))}
+      [:title (h (:name inst))]
+      [:circle {:cx (n1 dx) :cy (n1 dy) :r (n1 dot-r)}]])
+   (for [c cs
+         :let [{:keys [anchor names] [x y w _] :box} (:label c)
+               by-name (into {} (map (juxt (comp :name :inst) :inst) (:members c)))
+               tx (case anchor "start" x "end" (+ x w) (+ x (/ w 2)))]
+         [k nm] (map-indexed vector names)]
+     [:a.label {:href (mine-path (by-name nm)) :tabindex "-1"}
+      [:text {:x (n1 tx) :y (n1 (+ y 7.6 (* k line-height))) :text-anchor anchor} (h nm)]])])
+
+(defn map-page
+  "Where the mines are: a world map with a dot per mine that has coordinates
+  (production mines; all with ?mines=all, as the home page), and the list of
+  those without."
+  [params _opts]
+  (let [all? (some? (mines-param params))
+        insts (cond->> (data/instances)
+                (not all?) (filter :isProduction)
+                true (sort-by (comp str/lower-case :name)))
+        placed (for [inst insts
+                     :let [[lat lon] (coordinates inst)]
+                     :when lat
+                     :let [[x y] (project lat lon)]]
+                 {:inst inst :x x :y y})
+        missing (remove coordinates insts)
+        cs (place-labels (mapv #(assoc % :dots (fan %)) (clusters placed)))]
+    (layout {:title "Where the mines are" :active :map}
+            [:section.intro
+             [:h1 "Where the mines are"]
+             [:p (str (count placed) " " (if all? "mines" "production mines") ", placed by the latitude and longitude "
+                      "in their registry entries. Mines at the same or nearby places are drawn as a small ring of dots with one label.")
+              " " (if all?
+                    [:a {:href "/map"} "Show production mines only"]
+                    [:a {:href "/map?mines=all"} "Show non-production mines too"]) "."]]
+            [:figure.map-figure
+             [:div.map-scroll (world-svg cs)]
+             [:figcaption.map-hint "The map scrolls sideways."]]
+            (when (seq missing)
+              [:section#not-on-map
+               [:h2 "Not on the map"]
+               [:ul.inline-list
+                (for [inst missing]
+                  [:li [:a {:href (mine-path inst)} (h (:name inst))]])]])
+            [:p.soft "The coordinates come from each mine's entry in the registry (" [:code ":location"] "). "
+             "To add or correct them, open a pull request against "
+             [:a {:href (str api/repository-url "/blob/dev/resources/instances.edn")} [:code "resources/instances.edn"]] "."
+             " Land outline: Natural Earth (public domain)."])))
+
 (defn- swatches [colors]
   (for [[group v] colors
         [k c] (if (map? v) v {group v})
@@ -323,7 +551,12 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 (field-row "Twitter" (if (str/blank? (:twitter inst)) ""
                                          [:a {:href (str "https://twitter.com/" (h (:twitter inst)))} "@" (h (:twitter inst))]))
                 (field-row "Location" (let [{:keys [latitude longitude]} (:location inst)]
-                                        (if (str/blank? latitude) "" (h (str latitude ", " longitude)))))
+                                        (cond
+                                          (coordinates inst)
+                                          [:span.location (h (str latitude ", " longitude)) " · "
+                                           [:a {:href (map-href inst)} "show on map"]]
+                                          (str/blank? latitude) ""
+                                          :else (h (str latitude ", " longitude)))))
                 (field-row "Colours" (or (seq (swatches (:colors inst))) ""))
                 (field-row "Logo" (let [u (safe-url (get-in inst [:images :logo]))
                                         override (logos/override (:namespace inst))]

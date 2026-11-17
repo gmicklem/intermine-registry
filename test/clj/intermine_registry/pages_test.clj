@@ -51,7 +51,7 @@
     (is (str/includes? css ".tile-light"))))
 
 (deftest theme-switch
-  (doseq [uri ["/" "/docs" "/status" "/instances/flymine"]]
+  (doseq [uri ["/" "/map" "/docs" "/status" "/instances/flymine"]]
     (let [body (page uri)
           head (subs body 0 (str/index-of body "</head>"))]
       (testing uri

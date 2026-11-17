@@ -93,7 +93,9 @@ the route table in `src/clj/intermine_registry/api.clj`). In short:
 - `PUT /service/synchronize`, `PUT /service/synchronize/{id}`: refresh now (admin token)
 - `POST/PUT/DELETE /service/instances[/{id}]`: 405, the registry is read-only
 
-Pages: `/` (the mines, with a filter), `/instances/{namespace}`, `/docs`, `/status` (the last
+Pages: `/` (the mines, with a filter), `/instances/{namespace}`, `/map` (where the mines are: a
+world map with a dot per mine, from the `location` of its entry; production mines, all with
+`?mines=all`; see [The map](#the-map)), `/docs`, `/status` (the last
 refresh of each mine: when, what changed, what failed), and the Galaxy hand-over pages
 `/im-to-galaxy?GALAXY_URL=` and `/galaxy-to-im?URL=`. The pages follow the OS's light or dark
 setting; a System / Light / Dark switch in the header overrides it (kept in the browser's
@@ -181,6 +183,37 @@ API, for such a mine:
 An override whose file is missing is ignored (with a warning at start-up) and the mine's logo is
 fetched as usual. PlanMine has one: its branding names the generic InterMine squares on
 `cdn.rawgit.com`, so the registry carries the planarian of its front-page logo (`planmine.png`).
+
+### The map
+
+`/map` draws each mine as a dot at the `latitude` and `longitude` of its `location` in
+`instances.edn` (decimal degrees, as strings), on an equirectangular world map (an inline SVG, no
+tiles, fonts or scripts from elsewhere), each dot a link to the mine's page. Mines at the same or
+nearby places (whose dots would overlap) are fanned out on a small ring, turned so each dot lies
+roughly towards its true place, with one label listing their names; labels are placed beside the
+ring where they overlap nothing else. A mine without coordinates is listed under "Not on the map".
+The instance page shows the coordinates with a "show on map" link. On a narrow screen the map
+keeps a legible size and scrolls sideways.
+
+#### World map outline
+
+The land on the `/map` page is
+[`resources/public/world-110m-land.path`](resources/public/world-110m-land.path): one SVG path
+(the `d` attribute, plain text, about 35 KB) made from the [Natural Earth](https://www.naturalearthdata.com)
+1:110m land polygons, which are in the public domain: `geojson/ne_110m_land.geojson` of
+[nvkelso/natural-earth-vector](https://github.com/nvkelso/natural-earth-vector) at commit
+`ca96624a56bd078437bca8184e78163e5039ad19` (2 Jun 2022), fetched 17 Nov 2026.
+[`scripts/make-world-path.py`](scripts/make-world-path.py) (Python 3, standard library only)
+projects it equirectangularly, x = (longitude + 180) × 2, y = (90 − latitude) × 2 (a 720 × 360
+canvas, the projection of `pages/project`), rounds to 1 decimal, simplifies each ring
+(Douglas-Peucker, 0.35 units) and drops rings under 0.5 square units: 5143 points in, 3149 out.
+To regenerate it:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/nvkelso/natural-earth-vector ne
+git -C ne sparse-checkout set --no-cone /geojson/ne_110m_land.geojson
+python3 -I scripts/make-world-path.py ne/geojson/ne_110m_land.geojson resources/public/world-110m-land.path
+```
 
 ## How the refresh works
 

@@ -4,6 +4,14 @@
 
 A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, keeping its read API.
 
+### Added
+- `/map`, "Where the mines are": a world map (inline SVG, Natural Earth 1:110m land, public
+  domain; equirectangular) with a dot per mine at the `location` of its entry, linking to the mine's
+  page; mines at the same or nearby places are fanned out on a small ring with one label. Production
+  mines, all with `?mines=all`; mines without coordinates are listed under "Not on the map". A "Map"
+  link in the header; the instance page's Location row links to the mine's dot ("show on map"). The
+  API is unchanged.
+
 ### Changed
 - The data is a version-controlled file, `resources/instances.edn`, validated with clojure.spec at
   start-up and in CI; mines are added and changed by pull request. Seeded from the live registry's
@@ -67,6 +75,9 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   `https://alliancemine.alliancegenome.org/alliancemine` (the registry held the Alliance BlueGenes
   page); the URGI mines (OakMine, RepetDB, WheatMine) and their maintainer URL use the renamed
   domain `urgi.versailles.inrae.fr`, to which every `inra.fr` URL now redirects.
+- Data corrections (17 Nov 2026): the blank locations are filled in: AllianceMine at SGD, Stanford
+  (37.428265, -122.169498, the old registry's YeastMine entry), AquaMine and FAANGMine at the Elsik
+  Lab, University of Missouri (38.940397, -92.327813, as HymenopteraMine and MaizeMine).
 
 ### Removed
 - MongoDB, user accounts, login, the add/edit/delete pages and the write endpoints

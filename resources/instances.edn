@@ -15,7 +15,8 @@
 ;;   :description        free text
 ;;   :organisms          vector of organism names, shown and searched (?q=)
 ;;   :neighbours         vector of group names, e.g. ["MODs"] (BlueGenes uses them)
-;;   :location           {:latitude "" :longitude ""} (strings, may be empty)
+;;   :location           {:latitude "" :longitude ""} (decimal degrees as strings,
+;;                       may be empty): the mine's dot on the /map page
 ;;   :maintainerOrgName, :maintainerUrl, :maintainerEmail, :maintainerGithubUrl,
 ;;   :twitter            strings, may be empty
 ;;   :isProduction       true for production mines (listed by default),
@@ -53,7 +54,8 @@
   :description "AllianceMine integrates many types of data for all the Model Organisms Fly, Worm, Zebrafish, Yeast, Rat, and Mouse. You can run flexible queries, export results and analyse lists of data."
   :organisms ["MODs"]
   :neighbours ["MODs"]
-  :location {:latitude "" :longitude ""}
+  ;; location: SGD, Stanford; from the old YeastMine entry
+  :location {:latitude "37.428265" :longitude "-122.169498"}
   :maintainerOrgName ""
   :maintainerUrl ""
   :maintainerEmail ""
@@ -74,7 +76,8 @@
   :description ""
   :organisms []
   :neighbours []
-  :location {:latitude "" :longitude ""}
+  ;; location: Elsik Lab, University of Missouri (as HymenopteraMine and MaizeMine)
+  :location {:latitude "38.940397" :longitude "-92.327813"}
   :maintainerOrgName "Elsik Lab (University of Missouri)"
   :maintainerUrl "https://elsiklab.missouri.edu/"
   :maintainerEmail ""
@@ -97,7 +100,8 @@
   :description ""
   :organisms []
   :neighbours []
-  :location {:latitude "" :longitude ""}
+  ;; location: Elsik Lab, University of Missouri (as HymenopteraMine and MaizeMine)
+  :location {:latitude "38.940397" :longitude "-92.327813"}
   :maintainerOrgName "Elsik Lab (University of Missouri)"
   :maintainerUrl "https://elsiklab.missouri.edu/"
   :maintainerEmail ""
