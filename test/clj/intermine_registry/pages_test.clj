@@ -98,13 +98,28 @@
       (is (not (str/includes? inst "For the maintainer")))
       (is (not (str/includes? (page "/") "Unreachable since"))))))
 
-(deftest first-failure-is-running-with-the-failure-visible
+(deftest a-failing-mine-still-running-shows-a-note
   (swap! intermine-registry.data/state update :instances
          (fn [insts] (mapv #(if (= "flymine" (:namespace %))
                               (assoc % :last_check {:time "2026-11-18T10:00:00.000Z" :outcome "failed"
-                                                    :reason "http 503" :since "2026-11-18T10:00:00.000Z"})
+                                                    :reason "http 503" :since "2026-11-17T22:00:00.000Z"})
                               %)
                            insts)))
-  (let [inst (page "/instances/flymine")]
-    (is (str/includes? inst "Running; the last check failed (http 503)"))
-    (is (not (str/includes? (page "/") "Unreachable since")))))
+  (let [inst (page "/instances/flymine")
+        home (page "/")]
+    (is (str/includes? inst "Running; check failed (http 503), retrying"))
+    (is (str/includes? inst "Failing since"))
+    (is (str/includes? inst "2026-11-17 22:00 UTC"))
+    (is (str/includes? inst "more than 24 hours"))
+    (is (str/includes? home "Running; check failed (http 503), retrying") "the note on the home page")
+    (is (str/includes? home "class=\"dot up\""))
+    (is (not (str/includes? home "Unreachable since"))))
+  (testing "REGISTRY_UNREACHABLE_AFTER_HOURS is the number on the page"
+    (let [resp (u/request :get "/instances/flymine" {:handler-opts {:unreachable-after-hours 48}})]
+      (is (str/includes? (:body resp) "more than 48 hours")))))
+
+(deftest status-page-states-the-schedule
+  (let [resp (u/request :get "/status" {:handler-opts {:minutes 360}})]
+    (is (str/includes? (:body resp) "every 6 hours"))
+    (is (str/includes? (:body resp) "more than 24 hours"))
+    (is (not (str/includes? (:body resp) "two failed")))))

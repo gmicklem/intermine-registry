@@ -15,6 +15,11 @@
            (catch NumberFormatException _
              (throw (ex-info (str k " must be an integer, got " (pr-str v)) {})))))))
 
+(defn- env-non-negative-int [env k default]
+  (let [n (env-int env k default)]
+    (when (neg? n) (throw (ex-info (str k " must not be negative, got " n) {})))
+    n))
+
 (defn config
   "The configuration from environment variables (README, Configuration)."
   ([] (config (System/getenv)))
@@ -22,7 +27,8 @@
    (let [env (into {} env)
          blank->nil #(when-not (str/blank? %) %)]
      {:port (env-int env "PORT" 3000)
-      :minutes (env-int env "REGISTRY_REFRESH_MINUTES" 60)
+      :minutes (env-int env "REGISTRY_REFRESH_MINUTES" 360)
+      :unreachable-after-hours (env-non-negative-int env "REGISTRY_UNREACHABLE_AFTER_HOURS" 24)
       :cache-dir (or (blank->nil (get env "REGISTRY_CACHE_DIR")) "./cache")
       :admin-token (blank->nil (get env "REGISTRY_ADMIN_TOKEN"))
       :instances-file (blank->nil (get env "REGISTRY_INSTANCES_FILE"))

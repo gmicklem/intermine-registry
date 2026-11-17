@@ -17,9 +17,9 @@
 (defn app-routes [opts]
   (routes
    (context "/service" []
-     (GET "/instances" {params :query-params} (api/list-instances params))
-     (GET "/instances/" {params :query-params} (api/list-instances params))
-     (GET "/instances/:id" [id] (api/get-instance id))
+     (GET "/instances" {params :query-params} (api/list-instances params opts))
+     (GET "/instances/" {params :query-params} (api/list-instances params opts))
+     (GET "/instances/:id" [id] (api/get-instance id opts))
      (POST "/instances" req (api/read-only req))
      (POST "/instances/" req (api/read-only req))
      (ANY "/instances/:id" req (api/read-only req))
@@ -31,6 +31,7 @@
    (GET "/service" [] (resp/found "/docs"))
    (GET "/health" [] (api/health))
    (GET "/" {params :query-params} (html (pages/home params opts)))
+   (GET "/instances/:ns/logo" [ns] (api/get-logo ns opts))
    (GET "/instances/:ns" [ns] (if-let [page (pages/instance-page ns opts)]
                                 (html page)
                                 (-> (resp/not-found (pages/not-found (str "/instances/" ns) opts))

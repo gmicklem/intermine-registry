@@ -100,9 +100,10 @@ td.organisms { max-width: 20rem; }
 td.when, .muted { color: var(--fg-soft); font-size: 0.875rem; white-space: nowrap; }
 .empty { color: var(--fg-soft); padding: 1rem 0.75rem; }
 
-.logo { position: relative; display: inline-block; width: 28px; height: 28px; flex: none; }
-.logo .placeholder { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 4px; background: var(--bg-soft); border: 1px solid var(--line); color: var(--fg-soft); font-weight: 600; font-size: 0.85rem; }
-.logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--bg); }
+/* a light tile in both themes, so dark or transparent logos always sit on white */
+.logo { position: relative; display: inline-block; width: 28px; height: 28px; flex: none; box-sizing: border-box; overflow: hidden; border-radius: 4px; background: #fff; border: 1px solid var(--line); }
+.logo .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #5f6368; font-weight: 600; font-size: 0.85rem; }
+.logo img { position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; padding: 3px; object-fit: contain; background: #fff; }
 .big-logo { max-height: 48px; vertical-align: middle; }
 
 .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; vertical-align: middle; }

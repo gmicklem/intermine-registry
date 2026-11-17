@@ -6,6 +6,7 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [intermine-registry.data :as data]
+            [intermine-registry.logos :as logos]
             [intermine-registry.refresh :as refresh]
             [ring.util.http-response :as resp]))
 
@@ -20,11 +21,22 @@
    :release_version :intermine_version :maintainerOrgName :maintainerUrl
    :maintainerEmail :maintainerGithubUrl :namespace])
 
+(def default-base-url "https://registry.intermine.org")
+
 (defn instance->json
   "The instance as the API shows it: the keys of json-key-order that the
-  instance has, in that order (Mongo's _id and __v are not part of it)."
-  [inst]
-  (apply array-map (mapcat (fn [k] (when (contains? inst k) [k (get inst k)])) json-key-order)))
+  instance has, in that order (Mongo's _id and __v are not part of it).
+  With opts (:base-url), an instance whose logo the registry holds also has
+  images.logo_cached, the absolute URL of the registry's copy; images.logo,
+  the mine's own URL, is not changed."
+  ([inst]
+   (apply array-map (mapcat (fn [k] (when (contains? inst k) [k (get inst k)])) json-key-order)))
+  ([inst {:keys [base-url]}]
+   (let [j (instance->json inst)]
+     (if (logos/cached? (:namespace inst))
+       (assoc j :images (assoc (or (:images inst) (array-map))
+                               :logo_cached (str (or base-url default-base-url) (logos/logo-path (:namespace inst)))))
+       j))))
 
 (defn json-response
   ([status body] (json-response status body {}))
@@ -109,12 +121,12 @@
 
 ;; ---------------------------------------------------------------- handlers
 
-(defn list-instances [params]
-  (json-response 200 (envelope 200 :instances (mapv instance->json (select-instances (data/instances) params)))))
+(defn list-instances [params opts]
+  (json-response 200 (envelope 200 :instances (mapv #(instance->json % opts) (select-instances (data/instances) params)))))
 
-(defn get-instance [id]
+(defn get-instance [id opts]
   (if-let [inst (find-instance (data/instances) id)]
-    (json-response 200 (envelope 200 :instance (instance->json inst)))
+    (json-response 200 (envelope 200 :instance (instance->json inst opts)))
     ;; the Node app answered {"statusCode":404,"errorMsg":"Not Found",...}
     (json-response 404 (envelope 404 :errorMsg "Not Found" :message (str "Instance Not Found: " id)))))
 
@@ -142,6 +154,28 @@
 (defn read-only [_]
   (json-response 405 (envelope 405 :message read-only-message :friendlyMessage read-only-message)
                  {"Allow" "GET"}))
+
+(defn get-logo
+  "GET /instances/{namespace}/logo: the registry's copy of the mine's logo
+  with its content type, cacheable for a day; 404 when there is none. (An SVG
+  is served with a CSP that forbids scripts, as it is served from the
+  registry's own origin.)"
+  [namespace {:keys [cache-dir]}]
+  (let [entry (get-in @data/state [:logos namespace])
+        body (try (logos/read-logo cache-dir entry)
+                  (catch java.io.IOException _ nil))]
+    (if body
+      {:status 200
+       :headers (cond-> {"Content-Type" (:content-type entry)
+                         "Cache-Control" "public, max-age=86400"
+                         "X-Content-Type-Options" "nosniff"}
+                  (:sha1 entry) (assoc "ETag" (str "\"" (:sha1 entry) "\""))
+                  (= "image/svg+xml" (:content-type entry))
+                  (assoc "Content-Security-Policy" "default-src 'none'; style-src 'unsafe-inline'; sandbox"))
+       :body body}
+      {:status 404
+       :headers {"Content-Type" "text/plain; charset=utf-8"}
+       :body "No logo cached for this mine"})))
 
 (defn health []
   (let [insts (data/instances)
@@ -215,6 +249,11 @@
     :params [["url" "required: the mine's URL, with or without scheme and www."]]
     :example "/service/namespace?url=www.flymine.org/flymine"
     :returns "{\"statusCode\": 200, \"namespace\": \"...\"}; 400 without url; 404 {\"message\": \"Url Not Found\"}"}
+   {:method "GET" :path "/instances/{namespace}/logo"
+    :summary "The registry's own copy of the mine's logo (fetched from the mine during the refresh; falls back to the mine's favicon), served with its image content type and Cache-Control: public, max-age=86400. Listed in the API as images.logo_cached."
+    :params [["namespace" "path: exact namespace"]]
+    :example nil
+    :returns "the image (png, jpeg, gif, svg or ico); 404 text when the registry holds none yet"}
    {:method "GET" :path "/{namespace}"
     :summary "Redirects (303) to the mine's web application."
     :params [["namespace" "path: exact namespace"]]

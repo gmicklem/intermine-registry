@@ -4,6 +4,7 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [intermine-registry.data :as data]
             [intermine-registry.refresh :as refresh]
+            [intermine-registry.system :as system]
             [intermine-registry.test-util :as u])
   (:import [com.sun.net.httpserver HttpExchange HttpHandler HttpServer]
            [java.net InetSocketAddress]))
@@ -115,36 +116,115 @@
   (is (= "bad URL" (refresh/classify-failure {:error-class "BadUrl"})))
   (is (= "answer too large" (refresh/classify-failure {:status 200 :body (apply str (repeat 70000 "1"))}))))
 
-(deftest two-strikes-rule
-  (let [bad {"/testmine/service/version/intermine" [200 anubis-page]}
-        good {"/testmine/service/version" [200 "35"] "/testmine/service/version/intermine" [200 "5.2.0"]}
-        step (fn [inst answers t]
-               (let [[server url] (stub-server answers)]
-                 (try (:instance (refresh/apply-results inst (refresh/fetch url) t))
-                      (finally (.stop ^HttpServer server 0)))))
-        s0 (assoc previous :last_check {:time t0 :outcome "ok" :reason nil :since nil})
-        s1 (step s0 bad t1)
-        s2 (step s1 bad t2)
-        s3 (step s2 good "2026-11-17T13:00:00.000Z")]
-    (testing "first failure: still Running, failure recorded"
+(def fetch-failed
+  "What `fetch` returns for a mine that answers with a bot-protection page."
+  {:intermine {:error "not a version" :reason "bot-protection page"}
+   :release {:error "not a version"} :api {:error "not a version"} :branding {:error "HTTP 200"}})
+
+(def fetch-ok
+  {:intermine {:value "5.2.0"} :release {:value "1.0"} :api {:value "35"}
+   :branding {:colors {} :images {}}})
+
+(defn- step
+  "The instance after a check at time t (a pure step: the time is injected)."
+  ([inst fetched t] (:instance (refresh/apply-results inst fetched t)))
+  ([inst fetched t opts] (:instance (refresh/apply-results inst fetched t opts))))
+
+(deftest failing-longer-than
+  (let [f refresh/failing-longer-than?]
+    (is (false? (f "2026-11-17T10:00:00.000Z" "2026-11-17T10:00:00.000Z" 24)))
+    (is (false? (f "2026-11-17T10:00:00.000Z" "2026-11-18T09:59:59.999Z" 24)))
+    (is (false? (f "2026-11-17T10:00:00.000Z" "2026-11-18T10:00:00.000Z" 24)) "exactly 24 h is not more than 24 h")
+    (is (true? (f "2026-11-17T10:00:00.000Z" "2026-11-18T10:00:00.001Z" 24)))
+    (is (true? (f "2026-11-17T10:00:00.000Z" "2026-11-17T11:00:00.001Z" 1)))
+    (is (false? (f nil "2026-11-18T10:00:00.001Z" 24)))))
+
+(deftest unreachable-only-after-24-hours-of-failures
+  (let [s0 (assoc previous :last_check {:time t0 :outcome "ok" :reason nil :since nil})
+        f1 "2026-11-17T11:00:00.000Z"                       ; the first failure
+        s1 (step s0 fetch-failed f1)
+        s2 (step s1 fetch-failed "2026-11-17T17:00:00.000Z") ; six hours later
+        s3 (step s2 fetch-failed "2026-11-18T11:00:00.000Z") ; exactly 24 h after the first failure
+        s4 (step s3 fetch-failed "2026-11-18T17:00:00.000Z") ; 30 h
+        s5 (step s4 fetch-ok "2026-11-18T23:00:00.000Z")]
+    (testing "first failure: still Running, failure recorded with its time as since"
       (is (= "Running" (:status s1)))
-      (is (= {:time t1 :outcome "failed" :reason "bot-protection page" :since t1} (:last_check s1))))
-    (testing "second consecutive failure: Unreachable, since the first failure"
-      (is (= "Unreachable" (:status s2)))
-      (is (= {:time t2 :outcome "failed" :reason "bot-protection page" :since t1} (:last_check s2))))
-    (testing "versions and branding kept throughout"
-      (is (= (select-keys previous kept-keys) (select-keys s2 kept-keys))))
-    (testing "a success clears it"
+      (is (= {:time f1 :outcome "failed" :reason "bot-protection page" :since f1} (:last_check s1))))
+    (testing "six hours of failures: Running, each check recorded, since unchanged"
+      (is (= "Running" (:status s2)))
+      (is (= {:time "2026-11-17T17:00:00.000Z" :outcome "failed" :reason "bot-protection page" :since f1} (:last_check s2))))
+    (testing "exactly 24 h after the first failure: not yet"
       (is (= "Running" (:status s3)))
-      (is (= {:time "2026-11-17T13:00:00.000Z" :outcome "ok" :reason nil :since nil} (:last_check s3)))
-      (is (= "5.2.0" (:intermine_version s3))))
-    (testing "a failure between two successes never makes it Unreachable"
-      (is (= "Running" (:status (step (step s3 bad t1) good t2)))))
-    (testing "never checked and failing: Unreachable at once (nothing to keep)"
-      (let [fresh (-> previous (dissoc :last_check :last_time_updated) (assoc :status "Not checked yet"))
-            r (step fresh bad t1)]
-        (is (= "Unreachable" (:status r)))
-        (is (= "failed" (get-in r [:last_check :outcome])))))))
+      (is (= f1 (get-in s3 [:last_check :since]))))
+    (testing "more than 24 h: Unreachable, still since the first failure"
+      (is (= "Unreachable" (:status s4)))
+      (is (= {:time "2026-11-18T17:00:00.000Z" :outcome "failed" :reason "bot-protection page" :since f1} (:last_check s4))))
+    (testing "versions and branding kept throughout"
+      (doseq [s [s1 s2 s3 s4]] (is (= (select-keys previous kept-keys) (select-keys s kept-keys)))))
+    (testing "a success clears it"
+      (is (= "Running" (:status s5)))
+      (is (= {:time "2026-11-18T23:00:00.000Z" :outcome "ok" :reason nil :since nil} (:last_check s5)))
+      (is (= "5.2.0" (:intermine_version s5))))
+    (testing "the clock restarts with the next run of failures"
+      (let [r (step s5 fetch-failed "2026-11-19T00:00:00.000Z")]
+        (is (= "Running" (:status r)))
+        (is (= "2026-11-19T00:00:00.000Z" (get-in r [:last_check :since])))))
+    (testing "the status is derived from time, not from a count of checks"
+      (let [late (step s1 fetch-failed "2026-11-20T11:00:00.000Z")]
+        (is (= "Unreachable" (:status late)) "two checks, three days apart (the registry was down)"))
+      (let [many (reduce #(step %1 fetch-failed %2) s0
+                         (map #(format "2026-11-17T%02d:00:00.000Z" %) (range 11 24)))]
+        (is (= "Running" (:status many)) "thirteen failures within 13 hours")))))
+
+(deftest unreachable-hours-are-configurable
+  (let [s0 (assoc previous :last_check {:time t0 :outcome "ok" :reason nil :since nil})
+        s1 (step s0 fetch-failed t1 {:unreachable-after-hours 1})
+        s2 (step s1 fetch-failed "2026-11-17T12:00:00.000Z" {:unreachable-after-hours 1})
+        s3 (step s1 fetch-failed "2026-11-17T12:00:00.001Z" {:unreachable-after-hours 1})]
+    (is (= "Running" (:status s1)))
+    (is (= "Running" (:status s2)) "exactly one hour after the first failure")
+    (is (= "Unreachable" (:status s3)))
+    (is (= "Running" (:status (step s1 fetch-failed "2026-11-17T12:00:00.001Z" {:unreachable-after-hours 2}))))
+    (testing "the default is 24 hours"
+      (is (= 24 refresh/default-unreachable-after-hours))
+      (is (= "Running" (:status (step s1 fetch-failed "2026-11-18T11:00:00.000Z"))))
+      (is (= "Unreachable" (:status (step s1 fetch-failed "2026-11-18T11:00:00.001Z")))))))
+
+(deftest never-checked-mines
+  (let [fresh (-> previous (dissoc :last_check :last_time_updated) (assoc :status "Not checked yet"))
+        s1 (step fresh fetch-failed t1)
+        s2 (step s1 fetch-failed "2026-11-18T11:00:00.000Z")
+        s3 (step s2 fetch-failed "2026-11-18T11:00:00.001Z")]
+    (testing "a mine that has never succeeded keeps the Not checked yet state while the failures are recent"
+      (is (= "Not checked yet" (:status s1)))
+      (is (= "failed" (get-in s1 [:last_check :outcome])))
+      (is (= "Not checked yet" (:status s2))))
+    (testing "and is Unreachable after more than 24 h of failures"
+      (is (= "Unreachable" (:status s3))))
+    (testing "the first success makes it Running"
+      (is (= "Running" (:status (step s1 fetch-ok t2)))))))
+
+(deftest configuration-defaults
+  (let [c (system/config {})]
+    (is (= 360 (:minutes c)) "every six hours")
+    (is (= 24 (:unreachable-after-hours c))))
+  (let [c (system/config {"REGISTRY_REFRESH_MINUTES" "60" "REGISTRY_UNREACHABLE_AFTER_HOURS" "48"})]
+    (is (= 60 (:minutes c)))
+    (is (= 48 (:unreachable-after-hours c))))
+  (is (thrown? clojure.lang.ExceptionInfo (system/config {"REGISTRY_UNREACHABLE_AFTER_HOURS" "-1"})))
+  (is (thrown? clojure.lang.ExceptionInfo (system/config {"REGISTRY_UNREACHABLE_AFTER_HOURS" "soon"}))))
+
+(deftest a-failing-stub-mine-end-to-end
+  (testing "through the real fetch: a failing mine stays Running with the reason"
+    (let [bad {"/testmine/service/version/intermine" [200 anubis-page]}
+          [server url] (stub-server bad)]
+      (try
+        (let [{:keys [instance]} (refresh/refresh-instance
+                                  (assoc previous :url url :last_check {:time t0 :outcome "ok" :reason nil :since nil}))]
+          (is (= "Running" (:status instance)))
+          (is (= "bot-protection page" (get-in instance [:last_check :reason])))
+          (is (= (:time (:last_check instance)) (:since (:last_check instance)))))
+        (finally (.stop ^HttpServer server 0))))))
 
 (deftest good-answers-and-the-node-rules
   (let [[server url] (stub-server {"/testmine/service/version" [200 "35\n"]

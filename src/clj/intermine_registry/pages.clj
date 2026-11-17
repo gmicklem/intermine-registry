@@ -6,7 +6,9 @@
             [hiccup.core :refer [h]]
             [hiccup.page :refer [html5]]
             [intermine-registry.api :as api]
-            [intermine-registry.data :as data]))
+            [intermine-registry.data :as data]
+            [intermine-registry.logos :as logos]
+            [intermine-registry.refresh :as refresh]))
 
 (defn- safe-url
   "url if it is http(s), else nil (mine-supplied values end up in src/href)."
@@ -50,6 +52,9 @@
 
 (defn- check-failed? [inst] (= "failed" (get-in inst [:last_check :outcome])))
 
+(defn- unreachable-hours [opts]
+  (or (:unreachable-after-hours opts) refresh/default-unreachable-after-hours))
+
 (defn- check-sentence
   "A plain-language sentence about the last check of the instance."
   [inst]
@@ -59,7 +64,7 @@
       (str "Unreachable since " (day-part since) (when reason (str " (" reason ")")))
 
       (check-failed? inst)
-      (str "Running; the last check failed (" reason "), one more failed check marks it Unreachable")
+      (str (or (:status inst) "unknown") "; check failed (" reason "), retrying")
 
       (= "Not checked yet" (:status inst)) "Not checked yet"
       :else (str (or (:status inst) "unknown")))))
@@ -74,13 +79,14 @@
 (defn- bot-reason? [reason] (contains? #{"bot-protection page" "html instead of json"} reason))
 
 (defn- logo
-  "The mine's logo over a neutral mark (its initial), which shows when there
-  is no logo or it does not load."
+  "The registry's copy of the mine's logo (/instances/{namespace}/logo) over
+  a neutral mark (its initial), which shows when the registry holds no logo
+  yet or it does not load. The pages never point at the mine's own host."
   [inst]
   [:span.logo {:aria-hidden "true"}
    [:span.placeholder (h (subs (str (:name inst) "?") 0 1))]
-   (when-let [src (safe-url (get-in inst [:images :logo]))]
-     [:img {:src src :alt "" :loading "lazy" :onerror "this.remove()"}])])
+   (when (logos/cached? (:namespace inst))
+     [:img {:src (logos/logo-path (:namespace inst)) :alt "" :loading "lazy" :onerror "this.remove()"}])])
 
 (def ^:private organisms-shown 6)
 
@@ -148,7 +154,7 @@
                                            (safe-url (:url inst)))}
                           (h (:name inst))]
                          (when-not (:isProduction inst) [:span.tag "dev"])
-                         (when (= "Unreachable" (:status inst))
+                         (when (or (= "Unreachable" (:status inst)) (check-failed? inst))
                            [:span.unreachable-note (h (check-sentence inst))])]]]
                   [:td [:a {:href (str "/instances/" (h (:namespace inst)))} [:code (h (:namespace inst))]]]
                   [:td.organisms (organisms-cell (:organisms inst))]
@@ -198,7 +204,7 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
 (defn- field-row [label value]
   [:tr [:th {:scope "row"} label] [:td value]])
 
-(defn- last-check-block [inst]
+(defn- last-check-block [inst opts]
   (let [{:keys [time outcome reason since] :as check} (:last_check inst)]
     [:section.last-check
      [:h2 "Last check"]
@@ -209,8 +215,9 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
          (field-row "Time" (h (date-part time)))
          (field-row "Outcome" (h outcome))
          (when reason (field-row "Reason" (h reason)))
-         (when (and (= "Unreachable" (:status inst)) since)
-           (field-row "Unreachable since" (h (date-part since))))]])
+         (when (and (= "failed" outcome) since)
+           (field-row (if (= "Unreachable" (:status inst)) "Unreachable since" "Failing since")
+                      (h (date-part since))))]])
      (when (check-failed? inst)
        [:p.notice
         (if (bot-reason? reason)
@@ -219,8 +226,10 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
            [:a {:href maintainer-notes-url} "how to do it"] "."]
           [:span "The registry could not get a version from this mine. If the mine is up, see "
            [:a {:href maintainer-notes-url} "what the registry's checks need"] "."])])
-     [:p.soft "A mine stays listed when a check fails, with its last known versions and branding; "
-      "it is marked Unreachable after two failed checks in a row."]]))
+     [:p.soft "A mine stays listed when a check fails, with its last known versions and branding. "
+      "The registry shows which mines exist, not whether they are up this minute: a mine is marked "
+      "Unreachable only when its checks have been failing for more than "
+      (unreachable-hours opts) " hours."]]))
 
 (defn instance-page [ns opts]
   (when-let [inst (api/find-instance (data/instances) ns)]
@@ -257,23 +266,27 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 (field-row "Location" (let [{:keys [latitude longitude]} (:location inst)]
                                         (if (str/blank? latitude) "" (h (str latitude ", " longitude)))))
                 (field-row "Colours" (or (seq (swatches (:colors inst))) ""))
-                (field-row "Logo" (if-let [u (safe-url (get-in inst [:images :logo]))]
-                                    [:span [:img.big-logo {:src u :alt (str (h (:name inst)) " logo") :onerror "this.remove()"}] " " [:code (h u)]]
-                                    ""))
+                (field-row "Logo" (let [u (safe-url (get-in inst [:images :logo]))]
+                                    (cond
+                                      (logos/cached? (:namespace inst))
+                                      [:span [:img.big-logo {:src (logos/logo-path (:namespace inst)) :alt (str (h (:name inst)) " logo") :onerror "this.remove()"}]
+                                       (when u [:span " " [:code (h u)]])]
+                                      u [:code (h u)]
+                                      :else "")))
                 (field-row "Added" (h (date-part (:created_at inst))))
                 (field-row "Last checked" (h (date-part (:last_time_updated inst))))
                 (when (seq (:errors result))
                   (field-row "Last refresh problems" [:ul.plain (for [e (:errors result)] [:li (h e)])]))]]
-              (last-check-block inst)
+              (last-check-block inst opts)
               [:h2 "JSON"]
               [:p "As served at " [:a {:href json-path} [:code json-path]] ":"]
-              [:pre.json (h (json/generate-string (api/instance->json inst) {:pretty true}))]))))
+              [:pre.json (h (json/generate-string (api/instance->json inst opts) {:pretty true}))]))))
 
 (defn docs [opts]
   (let [base (:base-url opts)
         example (some-> (first (filter #(= "flymine" (:namespace %)) (data/instances)))
-                        api/instance->json)
-        example (or example (some-> (first (data/instances)) api/instance->json))]
+                        (api/instance->json opts))
+        example (or example (some-> (first (data/instances)) (api/instance->json opts)))]
     (layout {:title "API" :active :docs}
             [:h1 "API"]
             [:p "Every answer is JSON (" [:code "application/json; charset=utf-8"] ") with "
@@ -305,9 +318,12 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 [:code "api_version"] ", " [:code "intermine_version"] ", " [:code "release_version"] ", "
                 [:code "status"] ", " [:code "last_check"] ", " [:code "colors"] ", " [:code "images"] " and " [:code "last_time_updated"]
                 " are refreshed from the mine; the rest come from the instances file. "
-                [:code "status"] " is " [:code "Running"] ", " [:code "Unreachable"] " (the last two checks failed) or "
+                [:code "status"] " is " [:code "Running"] ", " [:code "Unreachable"] " (the checks have been failing for more than "
+                (unreachable-hours opts) " hours) or "
                 [:code "Not checked yet"] "; " [:code "last_check"] " is "
-                [:code "{time, outcome (ok|failed), reason, since}"] ". Unreachable mines stay in the list."]
+                [:code "{time, outcome (ok|failed), reason, since}"] ". Unreachable mines stay in the list. "
+                [:code "images.logo"] " is the mine's own logo URL; " [:code "images.logo_cached"]
+                " (when present) is the registry's copy of it, served from " [:code "/instances/{namespace}/logo"] "."]
                [:pre.json (h (json/generate-string example {:pretty true}))]]))))
 
 (defn status-page [opts]
@@ -316,14 +332,20 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
     (layout {:title "Status" :active :status}
             [:h1 "Refresh status"]
             [:p (if (pos? (or (:minutes opts) 0))
-                  (str "Every mine is checked every " (:minutes opts) " minutes. ")
+                  (str "Every mine is checked "
+                       (let [m (:minutes opts)]
+                         (if (zero? (mod m 60))
+                           (if (= 60 m) "every hour" (str "every " (quot m 60) " hours"))
+                           (str "every " m " minutes")))
+                       ". ")
                   "Scheduled checks are disabled. ")
              (if last-run
                (str "Last complete run: " (date-part (:finished last-run)) " (" (:count last-run) " mines).")
                "No run since the cache was created; the values shown are the initial ones from the instances file.")]
             [:p "A failed check never removes a mine from the registry: it keeps its last known versions and "
-             "branding and the reason is shown here. After two failed checks in a row the mine is marked "
-             [:strong "Unreachable"] ". Reasons: " [:code "timeout"] ", " [:code "connection refused"] ", "
+             "branding and the reason is shown here. A mine is marked "
+             [:strong "Unreachable"] " only when its checks have been failing for more than "
+             (unreachable-hours opts) " hours; until then it stays Running and the failed check is noted. Reasons: " [:code "timeout"] ", " [:code "connection refused"] ", "
              [:code "http NNN"] ", " [:code "bot-protection page"] ", " [:code "html instead of json"] ", "
              [:code "invalid version string"] ". Mine maintainers: "
              [:a {:href maintainer-notes-url} "letting the registry check your mine"] "."]
