@@ -87,7 +87,9 @@ the route table in `src/clj/intermine_registry/api.clj`). In short:
 
 Pages: `/` (the mines, with a filter), `/instances/{namespace}`, `/docs`, `/status` (the last
 refresh of each mine: when, what changed, what failed), and the Galaxy hand-over pages
-`/im-to-galaxy?GALAXY_URL=` and `/galaxy-to-im?URL=`.
+`/im-to-galaxy?GALAXY_URL=` and `/galaxy-to-im?URL=`. The pages follow the OS's light or dark
+setting; a System / Light / Dark switch in the header overrides it (kept in the browser's
+`localStorage` as `registry-theme`; without JavaScript the switch is hidden and the OS decides).
 
 ### Status and last check
 
@@ -138,9 +140,18 @@ fails the previous copy is kept.
 - In the API, `images.logo_cached` is the absolute URL of that copy (built from
   `REGISTRY_BASE_URL`); it is present only when the registry holds a logo. `images.logo` is still
   the mine's own URL, unchanged.
-- The pages show a light tile with the mine's initial until the registry holds a logo, so on a
-  fresh install (no cache yet) every mine shows its initial until the first refresh, 10 s after
-  start-up, has filled `logos/`. The logo files are not part of the repository.
+- `images.logo_tile`, present with `images.logo_cached`, is `"light"` or `"dark"`: the shade of the
+  tile the logo reads well on. When it stores a logo the registry decodes it (PNG, JPEG, GIF; an
+  ICO or SVG counts as `"light"`) and measures the mean luminance, 0.2126 R + 0.7152 G + 0.0722 B,
+  of its visible pixels (weighted by alpha, ignoring alpha 32 or less): a logo at 180 or more out of
+  255 (`logos/light-logo-luminance`) is light and gets a dark tile, any other a light tile. Of the
+  mines' logos in November 2026, AquaMine's white trident (240) and ThaleMine's white disc (208)
+  are on dark tiles, the rest (13 to 147) on white ones. The shade is kept in the logo index of
+  `registry-cache.edn` (`:logo-tile`); a cache from before it was kept is upgraded at start-up.
+- The pages put each logo on a 28 px tile of that shade, in both page themes, and show a light
+  tile with the mine's initial until the registry holds a logo, so on a fresh install (no cache
+  yet) every mine shows its initial until the first refresh, 10 s after start-up, has filled
+  `logos/`. The logo files are not part of the repository.
 
 ## How the refresh works
 

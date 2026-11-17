@@ -27,15 +27,18 @@
   "The instance as the API shows it: the keys of json-key-order that the
   instance has, in that order (Mongo's _id and __v are not part of it).
   With opts (:base-url), an instance whose logo the registry holds also has
-  images.logo_cached, the absolute URL of the registry's copy; images.logo,
-  the mine's own URL, is not changed."
+  images.logo_cached, the absolute URL of the registry's copy, and
+  images.logo_tile, \"light\" or \"dark\": the shade of tile the logo is
+  meant to sit on (dark for a light logo); images.logo, the mine's own URL,
+  is not changed."
   ([inst]
    (apply array-map (mapcat (fn [k] (when (contains? inst k) [k (get inst k)])) json-key-order)))
   ([inst {:keys [base-url]}]
    (let [j (instance->json inst)]
      (if (logos/cached? (:namespace inst))
        (assoc j :images (assoc (or (:images inst) (array-map))
-                               :logo_cached (str (or base-url default-base-url) (logos/logo-path (:namespace inst)))))
+                               :logo_cached (str (or base-url default-base-url) (logos/logo-path (:namespace inst)))
+                               :logo_tile (logos/tile (:namespace inst))))
        j))))
 
 (defn json-response
@@ -250,7 +253,7 @@
     :example "/service/namespace?url=www.flymine.org/flymine"
     :returns "{\"statusCode\": 200, \"namespace\": \"...\"}; 400 without url; 404 {\"message\": \"Url Not Found\"}"}
    {:method "GET" :path "/instances/{namespace}/logo"
-    :summary "The registry's own copy of the mine's logo (fetched from the mine during the refresh; falls back to the mine's favicon), served with its image content type and Cache-Control: public, max-age=86400. Listed in the API as images.logo_cached."
+    :summary "The registry's own copy of the mine's logo (fetched from the mine during the refresh; falls back to the mine's favicon), served with its image content type and Cache-Control: public, max-age=86400. Listed in the API as images.logo_cached, with images.logo_tile (\"light\" or \"dark\") the shade of tile it reads well on."
     :params [["namespace" "path: exact namespace"]]
     :example nil
     :returns "the image (png, jpeg, gif, svg or ico); 404 text when the registry holds none yet"}

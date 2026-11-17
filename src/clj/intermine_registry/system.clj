@@ -3,6 +3,7 @@
   (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
             [intermine-registry.data :as data]
+            [intermine-registry.logos :as logos]
             [intermine-registry.refresh :as refresh]
             [intermine-registry.server :as server]
             [ring.adapter.jetty :refer [run-jetty]]))
@@ -48,6 +49,7 @@
   [opts]
   (stop!)
   (data/load! opts)
+  (logos/add-missing-tiles! (:cache-dir opts))
   (refresh/start-scheduler! opts)
   (let [s (run-jetty (server/handler opts) {:port (:port opts) :join? false :send-server-version? false})]
     (reset! server s)

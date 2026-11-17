@@ -9,5 +9,7 @@
   (:gen-class))
 
 (defn -main [& args]
+  ;; the logos are decoded with javax.imageio (logos/logo-tile): no display
+  (System/setProperty "java.awt.headless" "true")
   (require 'intermine-registry.system)
   (apply (resolve 'intermine-registry.system/-main) args))

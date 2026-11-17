@@ -1,7 +1,8 @@
 (ns intermine-registry.logos-test
   "The logo cache: fetching a mine's logo during the refresh, keeping the
   previous copy when a fetch fails, serving it at /instances/{namespace}/logo,
-  images.logo_cached in the API and the pages."
+  images.logo_cached in the API and the pages; the tile shade of each logo
+  (images.logo_tile)."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -10,8 +11,11 @@
             [intermine-registry.refresh :as refresh]
             [intermine-registry.test-util :as u])
   (:import [com.sun.net.httpserver HttpExchange HttpHandler HttpServer]
+           [java.awt.image BufferedImage]
+           [java.io ByteArrayOutputStream]
            [java.net InetSocketAddress]
-           [java.nio.file Files]))
+           [java.nio.file Files]
+           [javax.imageio ImageIO]))
 
 (use-fixtures :each u/with-bundled-data)
 
@@ -22,6 +26,26 @@
                0x89 0x00 0x00 0x00 0x0d 0x49 0x44 0x41 0x54 0x78 0x9c 0x63 0xf8 0xcf 0xc0 0xf0
                0x1f 0x00 0x05 0x00 0x01 0xff 0x89 0x99 0x3d 0x1d 0x00 0x00 0x00 0x00 0x49 0x45
                0x4e 0x44 0xae 0x42 0x60 0x82]))
+
+(defn- image
+  "A w x h ARGB image, each pixel (f x y) -> 0xAARRGGBB."
+  ^BufferedImage [w h f]
+  (let [img (BufferedImage. w h BufferedImage/TYPE_INT_ARGB)]
+    (doseq [x (range w) y (range h)] (.setRGB img (int x) (int y) (unchecked-int (f x y))))
+    img))
+
+(defn- encode
+  "img as bytes in the format (\"png\", \"gif\", \"jpg\"; jpg needs an RGB image)."
+  ^bytes [^BufferedImage img fmt]
+  (let [out (ByteArrayOutputStream.)]
+    (ImageIO/write img ^String fmt out)
+    (.toByteArray out)))
+
+(def white 0xffffffff)
+(def black 0xff000000)
+(def clear 0x00000000)
+
+(def white-png (encode (image 8 8 (constantly white)) "png"))
 
 (def ico (byte-array (concat [0 0 1 0 1 0 16 16 0 0 1 0 32 0] (repeat 40 0))))
 
@@ -101,6 +125,50 @@
     (is (str/includes? (logos/check-image "image/png" (byte-array (inc logos/max-bytes))) "too large"))
     (is (nil? (logos/check-image "image/png" (byte-array logos/max-bytes))) "512 KB exactly is accepted")))
 
+(deftest tile-shade-from-luminance
+  (testing "luminance of synthetic images"
+    (is (= 255.0 (Math/rint (logos/image-luminance (image 4 4 (constantly white))))))
+    (is (= 0.0 (logos/image-luminance (image 4 4 (constantly black)))))
+    (is (nil? (logos/image-luminance (image 4 4 (constantly clear)))) "nothing visible")
+    (is (= 0.0 (logos/image-luminance (image 4 4 (fn [x y] (if (= [x y] [1 1]) black clear)))))
+        "transparent pixels are ignored")
+    (is (= 0.0 (logos/image-luminance (image 4 4 (fn [x _] (if (zero? x) black 0x20ffffff)))))
+        "faint pixels (alpha 32 or less) are ignored")
+    (is (< 169 (logos/image-luminance (image 2 1 (fn [x _] (if (zero? x) 0xffffffff 0x80000000)))) 170)
+        "weighted by alpha: (255 * 255 + 0 * 128) / (255 + 128) = 169.8")
+    (is (< 182 (logos/image-luminance (image 1 1 (constantly 0xff00ff00))) 183) "green counts 0.7152"))
+  (testing "the shade: a light logo gets the dark tile"
+    (is (= "dark" (logos/image-tile (image 4 4 (constantly white)))))
+    (is (= "light" (logos/image-tile (image 4 4 (constantly black)))))
+    (is (= "light" (logos/image-tile (image 4 4 (fn [x y] (if (= [x y] [2 3]) black clear)))))
+        "transparent except a dark pixel")
+    (is (= "dark" (logos/image-tile (image 4 4 (fn [x y] (if (= [x y] [2 3]) white clear)))))
+        "transparent except a white pixel (a white logo on a transparent background)")
+    (is (= "light" (logos/image-tile (image 4 4 (constantly clear)))) "nothing visible: light")
+    (is (= "dark" (logos/shade-for-luminance logos/light-logo-luminance)))
+    (is (= "light" (logos/shade-for-luminance (dec logos/light-logo-luminance))))
+    (is (= "light" (logos/shade-for-luminance nil))))
+  (testing "the threshold sorts the mines' logos of Nov 2026 (measured luminance)"
+    (is (= {"aquaMine" "dark" "thalemine" "dark" "flymine" "light" "mousemine" "light" "maizemine" "light"
+            "planmine" "light" "humanmine" "light" "hymenopteramine" "light" "faangmine" "light"}
+           (update-vals {"aquaMine" 240 "thalemine" 208 "flymine" 147 "mousemine" 147 "maizemine" 139
+                         "planmine" 127 "humanmine" 74 "hymenopteramine" 19 "faangmine" 13}
+                        logos/shade-for-luminance))))
+  (testing "from the stored bytes"
+    (is (= "dark" (logos/logo-tile white-png)))
+    (is (= "light" (logos/logo-tile (encode (image 8 8 (constantly black)) "png"))))
+    (is (= "dark" (logos/logo-tile (encode (image 8 8 (fn [x _] (if (< x 4) white clear))) "gif"))) "GIF")
+    (let [rgb (BufferedImage. 8 8 BufferedImage/TYPE_INT_RGB)]
+      (doseq [x (range 8) y (range 8)] (.setRGB rgb (int x) (int y) (unchecked-int white)))
+      (is (= "dark" (logos/logo-tile (encode rgb "jpg"))) "JPEG"))
+    (is (= "dark" (logos/logo-tile (encode (image 2000 1500 (constantly white)) "png"))) "a large image is subsampled")
+    (testing "what javax.imageio cannot decode: light"
+      (is (= "light" (logos/logo-tile ico)) "ICO")
+      (is (= "light" (logos/logo-tile (text "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect fill=\"#fff\"/></svg>"))) "SVG")
+      (is (= "light" (logos/logo-tile (text "RIFF....WEBPVP8 "))) "WebP")
+      (is (= "light" (logos/logo-tile (byte-array (take 30 white-png)))) "a truncated PNG")
+      (is (= "light" (logos/logo-tile (byte-array 0)))))))
+
 (deftest logo-candidates-order
   (is (= ["https://m.org/mine/model/images/logo.png" "https://m.org/mine/model/images/favicon.ico" "https://m.org/mine/favicon.ico"]
          (refresh/logo-candidates {:url "https://m.org/mine/" :images {:logo "model/images/logo.png"}})))
@@ -117,6 +185,7 @@
         (is (= "image/png" (:content-type logo)))
         (is (= (str url "/model/images/logo.png") (:source logo)) "relative images.logo resolved against the mine")
         (is (= (alength ^bytes png) (:bytes logo)))
+        (is (contains? #{"light" "dark"} (:logo-tile logo)) "the tile shade is kept in the index")
         (is (empty? errors))
         (is (= (vec png) (file-bytes dir "testmine.png")))
         (is (= logo (get-in @data/state [:logos "testmine"])) "indexed in the state")
@@ -202,10 +271,12 @@
       (is (= #{"flymine"} (set (keys (:logos @data/state)))))
       (finally (delete-tree! dir)))))
 
-(defn- cached-state! [dir ns]
-  (let [entry (logos/store! dir ns {:content-type "image/png" :body png :source "x"} nil "2026-11-17T10:00:00.000Z")]
-    (swap! data/state assoc-in [:logos ns] entry)
-    entry))
+(defn- cached-state!
+  ([dir ns] (cached-state! dir ns png))
+  ([dir ns body]
+   (let [entry (logos/store! dir ns {:content-type "image/png" :body body :source "x"} nil "2026-11-17T10:00:00.000Z")]
+     (swap! data/state assoc-in [:logos ns] entry)
+     entry)))
 
 (deftest api-exposes-logo-cached
   (let [flymine-own (get-in (first (filter #(= "flymine" (:namespace %)) (data/instances))) [:images :logo])
@@ -214,8 +285,9 @@
                         (or (get b "instance")
                             (first (filter #(= "flymine" (get % "namespace")) (get b "instances"))))))]
     (try
-      (testing "nothing cached: no logo_cached, images.logo as before"
+      (testing "nothing cached: no logo_cached or logo_tile, images.logo as before"
         (is (not (contains? (get (fly "/service/instances/flymine") "images") "logo_cached")))
+        (is (not (contains? (get (fly "/service/instances/flymine") "images") "logo_tile")))
         (is (= flymine-own (get-in (fly "/service/instances/flymine") ["images" "logo"]))))
       (cached-state! dir "flymine")
       (testing "cached: absolute URL from REGISTRY_BASE_URL, images.logo untouched"
@@ -223,6 +295,50 @@
           (is (= "https://reg.example.org/instances/flymine/logo" (get-in (fly uri) ["images" "logo_cached"])) uri)
           (is (= flymine-own (get-in (fly uri) ["images" "logo"])) uri))
         (is (not (contains? (get (u/body-json (u/request :get "/service/instances/mousemine")) "instance") "logo_cached"))))
+      (testing "images.logo_tile: the tile shade of the cached logo, only when there is one"
+        (cached-state! dir "flymine" (encode (image 8 8 (constantly black)) "png"))
+        (cached-state! dir "aquaMine" white-png)
+        (let [insts (get (u/body-json (u/request :get "/service/instances")) "instances")
+              tile (fn [ns] (get-in (first (filter #(= ns (get % "namespace")) insts)) ["images" "logo_tile"]))]
+          (is (= "light" (tile "flymine")))
+          (is (= "dark" (tile "aquaMine")))
+          (is (= ["logo_cached" "logo_tile"] (take-last 2 (keys (get (first (filter #(= "aquaMine" (get % "namespace")) insts)) "images"))))
+              "after the mine's own images keys")
+          (is (not (contains? (get (first (filter #(= "mousemine" (get % "namespace")) insts)) "images") "logo_tile")))
+          (is (= "dark" (get-in (u/body-json (u/request :get "/service/instances/aquamine")) ["instance" "images" "logo_tile"])))))
+      (testing "an index entry without a shade (before it was kept) counts as light"
+        (swap! data/state update-in [:logos "aquaMine"] dissoc :logo-tile)
+        (is (= "light" (get-in (u/body-json (u/request :get "/service/instances/aquamine")) ["instance" "images" "logo_tile"]))))
+      (finally (delete-tree! dir)))))
+
+(deftest existing-caches-get-their-tiles-at-start-up
+  (let [dir (temp-dir)
+        black-png (encode (image 8 8 (constantly black)) "png")
+        stored (fn [ns body] (dissoc (logos/store! dir ns {:content-type "image/png" :body body :source "x"} nil "2026-11-17T10:00:00.000Z")
+                                     :logo-tile))]
+    (try
+      ;; an index written before :logo-tile was kept, plus an entry whose file is gone
+      ;; and one with a bad value
+      (spit (data/cache-file dir)
+            (pr-str {:logos {"aquaMine" (stored "aquaMine" white-png)
+                             "flymine" (stored "flymine" black-png)
+                             "thalemine" (assoc (stored "thalemine" white-png) :logo-tile "purple")
+                             "mousemine" {:file "mousemine.png" :content-type "image/png"}}}))
+      (data/load! (assoc u/opts :cache-dir dir))
+      (is (nil? (get-in @data/state [:logos "thalemine" :logo-tile])) "a bad value is dropped on load")
+      (is (= ["aquaMine" "flymine" "thalemine"] (logos/add-missing-tiles! dir)))
+      (is (= "dark" (get-in @data/state [:logos "aquaMine" :logo-tile])))
+      (is (= "light" (get-in @data/state [:logos "flymine" :logo-tile])))
+      (is (= "dark" (get-in @data/state [:logos "thalemine" :logo-tile])))
+      (is (not (contains? (get-in @data/state [:logos "mousemine"]) :logo-tile)) "no file: left alone")
+      (is (= "light" (logos/tile "mousemine")) "and shown on a light tile")
+      (testing "written back to the cache"
+        (is (= "dark" (get-in (data/read-cache dir) [:logos "aquaMine" :logo-tile])))
+        (is (= "light" (get-in (data/read-cache dir) [:logos "flymine" :logo-tile]))))
+      (testing "the next start has nothing to do"
+        (data/load! (assoc u/opts :cache-dir dir))
+        (is (= [] (logos/add-missing-tiles! dir))))
+      (is (nil? (logos/add-missing-tiles! nil)) "no cache dir")
       (finally (delete-tree! dir)))))
 
 (deftest pages-use-the-registry-copy
@@ -245,4 +361,14 @@
           (is (str/includes? inst "src=\"/instances/flymine/logo\""))
           (is (str/includes? inst "logo_cached"))
           (is (not (str/includes? (page "/instances/mousemine") "src=\"/instances/mousemine/logo\"")))))
+      (testing "the tile shade follows the logo"
+        (cached-state! dir "aquaMine" white-png)
+        (let [home (page "/")
+              aqua (page "/instances/aquaMine")]
+          (is (str/includes? home "class=\"logo tile-dark\""))
+          (is (str/includes? home "class=\"logo tile-light\""))
+          (is (str/includes? aqua "class=\"logo tile-dark\"") "the instance page heading")
+          (is (str/includes? aqua "class=\"big-logo tile-dark\"") "the Logo field")
+          (is (str/includes? aqua "&quot;logo_tile&quot; : &quot;dark&quot;") "the JSON on the page")
+          (is (str/includes? (page "/instances/mousemine") "class=\"logo tile-light\"") "no logo: the initial on a light tile")))
       (finally (delete-tree! dir)))))

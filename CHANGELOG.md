@@ -45,7 +45,14 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   `GET /instances/{namespace}/logo` (`Cache-Control: public, max-age=86400`). The pages use that
   path instead of the mines' own hosts and show the initial mark until the registry holds a logo.
   Instances in the API gain `images.logo_cached` (absolute, from `REGISTRY_BASE_URL`) when a logo is
-  held; `images.logo` is unchanged. The logo is shown on a light tile in both themes.
+  held; `images.logo` is unchanged.
+- Each cached logo has a tile shade, measured when it is stored (mean luminance of its visible
+  pixels; 180 of 255 or more is a light logo): the pages show light logos (AquaMine, ThaleMine) on a
+  near-black tile and the others on a white one, in both page themes, and the API gives it as
+  `images.logo_tile` (`"light"` or `"dark"`, present with `images.logo_cached`). A cache from before
+  the shade was kept gets it at start-up.
+- A System / Light / Dark theme switch in the page header (stored in `localStorage`, applied before
+  the first paint); without JavaScript the pages follow the OS setting as before.
 - New: `GET /health`, Dockerfile, Compose example, GitHub Actions CI.
 - Data corrections (17 Nov 2026): AllianceMine's URL is the InterMine service root
   `https://alliancemine.alliancegenome.org/alliancemine` (the registry held the Alliance BlueGenes

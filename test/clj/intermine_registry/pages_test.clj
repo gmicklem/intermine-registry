@@ -39,9 +39,29 @@
     (is (str/includes? body "FlyMine"))))
 
 (deftest stylesheet
-  (let [resp (u/request :get "/css/registry.css")]
+  (let [resp (u/request :get "/css/registry.css")
+        css (slurp (:body resp))]
     (is (= 200 (:status resp)))
-    (is (str/starts-with? (get-in resp [:headers "Content-Type"]) "text/css"))))
+    (is (str/starts-with? (get-in resp [:headers "Content-Type"]) "text/css"))
+    (testing "the dark palette for the OS preference unless Light was chosen, and for an explicit Dark"
+      (is (str/includes? css ":root:not([data-theme=\"light\"])"))
+      (is (str/includes? css ":root[data-theme=\"dark\"]"))
+      (is (= 2 (count (re-seq #"(?m)^\s*color-scheme: dark;" css)))))
+    (is (str/includes? css ".tile-dark"))
+    (is (str/includes? css ".tile-light"))))
+
+(deftest theme-switch
+  (doseq [uri ["/" "/docs" "/status" "/instances/flymine"]]
+    (let [body (page uri)
+          head (subs body 0 (str/index-of body "</head>"))]
+      (testing uri
+        (is (str/includes? body "id=\"theme-switch\""))
+        (doseq [v ["system" "light" "dark"]]
+          (is (str/includes? body (str "id=\"theme-" v "\" name=\"theme\" type=\"radio\" value=\"" v "\"")) v))
+        (is (str/includes? body "hidden") "hidden until the script shows it (no JavaScript: the OS decides)")
+        (is (str/includes? head "localStorage.getItem('registry-theme')") "applied in <head>, before the first paint")
+        (is (< (str/index-of head "registry-theme") (str/index-of head "registry.css")) "before the stylesheet")
+        (is (str/includes? body "localStorage.setItem('registry-theme'"))))))
 
 (deftest text-is-escaped
   (swap! intermine-registry.data/state update :instances conj
