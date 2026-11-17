@@ -182,6 +182,26 @@ An override whose file is missing is ignored (with a warning at start-up) and th
 fetched as usual. PlanMine has one: its branding names the generic InterMine squares on
 `cdn.rawgit.com`, so the registry carries the planarian of its front-page logo (`planmine.png`).
 
+### World map outline
+
+The land on the `/map` page is
+[`resources/public/world-110m-land.path`](resources/public/world-110m-land.path): one SVG path
+(the `d` attribute, plain text, about 35 KB) made from the [Natural Earth](https://www.naturalearthdata.com)
+1:110m land polygons, which are in the public domain: `geojson/ne_110m_land.geojson` of
+[nvkelso/natural-earth-vector](https://github.com/nvkelso/natural-earth-vector) at commit
+`ca96624a56bd078437bca8184e78163e5039ad19` (2 Jun 2022), fetched 17 Nov 2026.
+[`scripts/make-world-path.py`](scripts/make-world-path.py) (Python 3, standard library only)
+projects it equirectangularly, x = (longitude + 180) × 2, y = (90 − latitude) × 2 (a 720 × 360
+canvas, the projection of `pages/project`), rounds to 1 decimal, simplifies each ring
+(Douglas-Peucker, 0.35 units) and drops rings under 0.5 square units: 5143 points in, 3149 out.
+To regenerate it:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/nvkelso/natural-earth-vector ne
+git -C ne sparse-checkout set --no-cone /geojson/ne_110m_land.geojson
+python3 -I scripts/make-world-path.py ne/geojson/ne_110m_land.geojson resources/public/world-110m-land.path
+```
+
 ## How the refresh works
 
 For each mine, in parallel with at most 4 mines at a time and 10 s timeouts, the server calls

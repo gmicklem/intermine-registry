@@ -7,7 +7,8 @@
     intermine-registry.api-test
     intermine-registry.refresh-test
     intermine-registry.logos-test
-    intermine-registry.pages-test])
+    intermine-registry.pages-test
+    intermine-registry.map-test])
 
 (defn -main [& _]
   (apply require test-namespaces)
