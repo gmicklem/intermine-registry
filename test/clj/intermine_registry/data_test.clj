@@ -3,7 +3,8 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [intermine-registry.data :as data])
+            [intermine-registry.data :as data]
+            [intermine-registry.test-util :as u])
   (:import [java.io File]))
 
 (def bundled (edn/read-string (slurp (io/resource "instances.edn"))))
@@ -13,7 +14,10 @@
        (catch clojure.lang.ExceptionInfo e (ex-message e))))
 
 (deftest the-bundled-file-is-valid
-  (is (= 14 (count (data/read-instances nil))))
+  (is (= (count bundled) (count (data/read-instances nil))) "the file as read by the app has every entry")
+  (is (pos? (count bundled)))
+  (is (= u/seeded-count (count (data/read-instances nil))))
+  (is (some #{"targetmine"} (map :namespace bundled)) "TargetMine, added 17 Nov 2026")
   (is (every? #(contains? % :namespace) bundled))
   (testing "every logo override names a file on the classpath, under public/logos/"
     (is (seq (filter :logo-override bundled)) "planmine has one")
@@ -107,9 +111,18 @@
 
 (deftest loaded-instances-have-status-and-last-check
   (data/load! {})
-  (is (every? #(= "Running" (:status %)) (data/instances)))
-  (is (every? #(= "ok" (get-in % [:last_check :outcome])) (data/instances)))
-  (is (every? #(= (:last_time_updated %) (get-in % [:last_check :time])) (data/instances))))
+  (let [seeded (remove #(= "targetmine" (:namespace %)) (data/instances))
+        tm (first (filter #(= "targetmine" (:namespace %)) (data/instances)))]
+    (is (seq seeded))
+    (is (every? #(= "Running" (:status %)) seeded))
+    (is (every? #(= "ok" (get-in % [:last_check :outcome])) seeded))
+    (is (every? #(= (:last_time_updated %) (get-in % [:last_check :time])) seeded))
+    (testing "TargetMine is listed as Unreachable, with the reason, until its checks succeed"
+      (is (= "Unreachable" (:status tm)))
+      (is (= {:time "2026-11-17T00:00:00Z" :outcome "failed"
+              :reason "server being repaired (maintainer, November 2026)" :since "2026-11-17T00:00:00Z"}
+             (:last_check tm)))
+      (is (nil? (:last_time_updated tm)) "never checked by this registry"))))
 
 (deftest cache-keeps-last-check-and-migrates-the-old-status
   (let [dir (.toFile (java.nio.file.Files/createTempDirectory "registry-cache" (make-array java.nio.file.attribute.FileAttribute 0)))

@@ -6,7 +6,7 @@
 (use-fixtures :each u/with-bundled-data)
 
 (def all-names ["AllianceMine" "AquaMine" "FAANGMine" "FlyMine" "HumanMine" "HymenopteraMine" "MaizeMine"
-                "MouseMine" "OakMine" "PhytoMine" "PlanMine" "RepetDB" "ThaleMine" "WheatMine"])
+                "MouseMine" "OakMine" "PhytoMine" "PlanMine" "RepetDB" "TargetMine" "ThaleMine" "WheatMine"])
 
 (defn- page [uri & [query]]
   (let [resp (u/request :get uri {:query query})]
@@ -91,6 +91,13 @@
                               %)
                            insts))))
 
+(defn- only-targetmine-unreachable?
+  "Every \"Unreachable since\" on the page is TargetMine's (listed so in instances.edn)."
+  [body]
+  (is (= (count (re-seq #"Unreachable since" body))
+         (count (re-seq #"Unreachable since 2026-11-17 \(server being repaired" body)))
+      "no other mine is Unreachable"))
+
 (deftest unreachable-mine-shows-the-reason
   (make-unreachable! "flymine" "bot-protection page")
   (let [home (page "/")
@@ -116,7 +123,21 @@
     (let [inst (page "/instances/mousemine")]
       (is (str/includes? inst "Last check"))
       (is (not (str/includes? inst "For the maintainer")))
-      (is (not (str/includes? (page "/") "Unreachable since"))))))
+      (only-targetmine-unreachable? (page "/")))))
+
+(deftest targetmine-is-listed-unreachable-with-the-reason
+  (let [reason "server being repaired (maintainer, November 2026)"
+        home (page "/")
+        inst (page "/instances/targetmine")
+        status (page "/status")]
+    (is (str/includes? home (str "Unreachable since 2026-11-17 (" reason ")")))
+    (is (str/includes? home "href=\"/instances/targetmine\""))
+    (is (str/includes? inst "TargetMine"))
+    (is (str/includes? inst reason))
+    (is (str/includes? inst "Unreachable since"))
+    (is (str/includes? inst "34.8225, 135.5240") "its location, with the map link")
+    (is (str/includes? inst "href=\"/map#mine-targetmine\""))
+    (is (str/includes? status (str "Unreachable since 2026-11-17 (" reason ")")))))
 
 (deftest a-failing-mine-still-running-shows-a-note
   (swap! intermine-registry.data/state update :instances
@@ -133,7 +154,7 @@
     (is (str/includes? inst "more than 24 hours"))
     (is (str/includes? home "Running; check failed (http 503), retrying") "the note on the home page")
     (is (str/includes? home "class=\"dot up\""))
-    (is (not (str/includes? home "Unreachable since"))))
+    (only-targetmine-unreachable? home))
   (testing "REGISTRY_UNREACHABLE_AFTER_HOURS is the number on the page"
     (let [resp (u/request :get "/instances/flymine" {:handler-opts {:unreachable-after-hours 48}})]
       (is (str/includes? (:body resp) "more than 48 hours")))))

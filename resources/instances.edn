@@ -43,7 +43,8 @@
 ;; written back to this file.
 ;;
 ;; Seeded from https://registry.intermine.org/service/instances on 17 Nov 2026
-;; (the 14 running mines; see CHANGELOG.md). Version strings that were HTML
+;; (the 14 running mines; see CHANGELOG.md); TargetMine was added on 17 Nov 2026
+;; from the old registry's dormant entry (see its comment). Version strings that were HTML
 ;; pages in the capture (AllianceMine, OakMine, PhytoMine, RepetDB, WheatMine)
 ;; were replaced by "".
 [
@@ -322,6 +323,34 @@
   :release_version ""
   :status "Running"
   :last_time_updated "2026-11-17T00:00:12.271Z"}
+
+ ;; TargetMine: added 17 Nov 2026 from the old registry's dormant entry (id 9, created
+ ;; 2017-06-22). The server is being repaired (maintainer, Nov 2026): listed as
+ ;; Unreachable with that reason until the checks succeed. The lab is at Osaka
+ ;; University (Suita campus coordinates); the server is hosted at a nearby institute.
+ ;; The :url is the old registry's and is unverified until the server is back.
+ {:id "9"
+  :name "TargetMine"
+  :namespace "targetmine"
+  :url "https://targetmine.mizuguchilab.org/targetmine"
+  :description "TargetMine integrates many types of data for human, rat and mouse"
+  :organisms ["H. sapiens" "M. musculus" "R. norvegicus"]
+  :neighbours ["Other Mines"]
+  :location {:latitude "34.8225" :longitude "135.5240"}
+  :maintainerOrgName "Mizuguchi Laboratory, Osaka University"
+  :maintainerUrl "https://mizuguchilab.org/"
+  :maintainerEmail ""
+  :maintainerGithubUrl ""
+  :twitter ""
+  :isProduction true
+  :created_at "2017-06-22T06:12:42.977Z"
+  :api_version "35"
+  :intermine_version "5.1.0"
+  :release_version "26r3"
+  :status "Unreachable"
+  :last_check {:time "2026-11-17T00:00:00Z" :outcome "failed" :reason "server being repaired (maintainer, November 2026)" :since "2026-11-17T00:00:00Z"}
+  :colors {:header {:main "#4C4C4C" :text "#FFFFFF"}}
+  :images {:logo "https://targetmine.mizuguchilab.org/images/tm-logo-45.png"}}
 
  {:id "12"
   :name "ThaleMine"

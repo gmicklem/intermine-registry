@@ -176,6 +176,23 @@
                          (map #(format "2026-11-17T%02d:00:00.000Z" %) (range 11 24)))]
         (is (= "Running" (:status many)) "thirteen failures within 13 hours")))))
 
+(deftest a-mine-listed-unreachable-stays-so-until-a-check-succeeds
+  ;; TargetMine, as in instances.edn: Unreachable, failed check "since" a few hours ago
+  (let [tm (->> (data/instances) (filter #(= "targetmine" (:namespace %))) first)
+        seeded-at (get-in tm [:last_check :since])]
+    (is (= "Unreachable" (:status tm)))
+    (testing "a failed check shortly after: still Unreachable (not flipped to Running), reason updated"
+      (let [s (step tm fetch-failed "2026-11-17T06:00:00.000Z")]
+        (is (= "Unreachable" (:status s)))
+        (is (= {:time "2026-11-17T06:00:00.000Z" :outcome "failed" :reason "bot-protection page" :since seeded-at}
+               (:last_check s)))))
+    (testing "a successful check: Running, outcome ok, versions and branding refreshed"
+      (let [s (step tm fetch-ok "2026-11-17T06:00:00.000Z")]
+        (is (= "Running" (:status s)))
+        (is (= {:time "2026-11-17T06:00:00.000Z" :outcome "ok" :reason nil :since nil} (:last_check s)))
+        (is (= "2026-11-17T06:00:00.000Z" (:last_time_updated s)))
+        (is (= "5.2.0" (:intermine_version s)))))))
+
 (deftest unreachable-hours-are-configurable
   (let [s0 (assoc previous :last_check {:time t0 :outcome "ok" :reason nil :since nil})
         s1 (step s0 fetch-failed t1 {:unreachable-after-hours 1})

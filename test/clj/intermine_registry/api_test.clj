@@ -65,6 +65,10 @@
                    (corrected ns))
       (corrected-images ns) (update "images" merge (corrected-images ns)))))
 
+(def added-since-capture
+  "Namespaces in instances.edn that were not in the 17 Nov 2026 capture."
+  ["targetmine"])
+
 (deftest instances-envelope-and-fields
   (let [captured (u/capture "instances.json")
         resp (u/request :get "/service/instances")
@@ -77,11 +81,17 @@
     (is (= 200 (get ours "statusCode")))
     (is (re-matches #"\d{1,2}/\d{1,2}/\d{4}, \d{1,2}:\d\d:\d\d [AP]M" (get ours "executionTime"))
         "executionTime in the Node app's toLocaleString format")
-    (testing "same instances, same order (sorted by name)"
-      (is (= (map #(get % "namespace") (get captured "instances"))
-             (map #(get % "namespace") (get ours "instances")))))
-    (doseq [[c o] (map vector (get captured "instances") (get ours "instances"))
-            :let [ns (get c "namespace")]]
+    (testing "the captured instances are all there, in the same order (sorted by name); mines
+              added since the capture (TargetMine) may be extra"
+      (let [captured-ns (map #(get % "namespace") (get captured "instances"))
+            ours-ns (map #(get % "namespace") (get ours "instances"))]
+        (is (= captured-ns (filter (set captured-ns) ours-ns)))
+        (is (= (set added-since-capture) (set (remove (set captured-ns) ours-ns)))
+            "only the known additions")
+        (is (= (+ (count captured-ns) (count added-since-capture)) u/seeded-count))))
+    (doseq [c (get captured "instances")
+            :let [ns (get c "namespace")
+                  o (first (filter #(= ns (get % "namespace")) (get ours "instances")))]]
       (testing ns
         (is (= (set (remove dropped-keys (keys c))) (disj (set (keys o)) "last_check"))
             "same key set (minus _id, __v; plus last_check)")
@@ -91,14 +101,14 @@
 
 (deftest mines-and-q-params
   (let [names #(map (fn [i] (get i "name")) (get (u/body-json (u/request :get "/service/instances" {:query %})) "instances"))]
-    (is (= 14 (count (names "mines=all"))))
-    (is (= 14 (count (names "mines=prod"))))
-    (is (empty? (names "mines=dev")) "the 14 seeded instances are all production")
+    (is (= u/seeded-count (count (names "mines=all"))))
+    (is (= u/seeded-count (count (names "mines=prod"))))
+    (is (empty? (names "mines=dev")) "the seeded instances are all production")
     (is (= ["FlyMine"] (names "q=D.%20melanogaster")) "organism, exact")
     (is (= ["FlyMine"] (names "q=flym")) "part of the name, case-insensitive")
     (is (some #{"MouseMine"} (names "q=mouse")))
     (testing "trailing slash"
-      (is (= 14 (count (get (u/body-json (u/request :get "/service/instances/")) "instances")))))))
+      (is (= u/seeded-count (count (get (u/body-json (u/request :get "/service/instances/")) "instances")))))))
 
 (deftest one-instance
   (let [captured (u/capture "instance-flymine.json")
@@ -178,7 +188,7 @@
         body (u/body-json resp)]
     (is (= 200 (:status resp)))
     (is (= "ok" (get body "status")))
-    (is (= 14 (get body "instances")))
+    (is (= u/seeded-count (get body "instances")))
     (is (contains? body "lastRefresh")))
   (is (= 301 (:status (u/request :get "/api-docs"))))
   (is (= 302 (:status (u/request :get "/service"))))
@@ -198,14 +208,14 @@
   (make-unreachable! "flymine" "bot-protection page")
   (let [insts (get (u/body-json (u/request :get "/service/instances")) "instances")
         fly (first (filter #(= "flymine" (get % "namespace")) insts))]
-    (is (= 14 (count insts)) "still listed by default")
+    (is (= u/seeded-count (count insts)) "still listed by default")
     (is (= "Unreachable" (get fly "status")))
     (is (= {"time" "2026-11-18T10:00:00.000Z" "outcome" "failed" "reason" "bot-protection page"
             "since" "2026-11-17T09:00:00.000Z"}
            (get fly "last_check")))
     (is (= (get-in (u/capture "instance-flymine.json") ["instance" "api_version"]) (get fly "api_version"))))
-  (is (= 14 (count (get (u/body-json (u/request :get "/service/instances" {:query "mines=all"})) "instances"))))
+  (is (= u/seeded-count (count (get (u/body-json (u/request :get "/service/instances" {:query "mines=all"})) "instances"))))
   (is (= "Unreachable" (get-in (u/body-json (u/request :get "/service/instances/flymine")) ["instance" "status"])))
   (let [h (u/body-json (u/request :get "/health"))]
-    (is (= 13 (get h "running")))
-    (is (= 1 (get h "unreachable")))))
+    (is (= (- u/seeded-count 2) (get h "running")) "all but TargetMine and FlyMine")
+    (is (= 2 (get h "unreachable")) "TargetMine (seeded) and FlyMine")))

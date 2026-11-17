@@ -16,6 +16,11 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
 - The data is a version-controlled file, `resources/instances.edn`, validated with clojure.spec at
   start-up and in CI; mines are added and changed by pull request. Seeded from the live registry's
   `/service/instances` on 17 Nov 2026 (14 running instances).
+- TargetMine re-added (17 Nov 2026) from the old registry's dormant entry (id 9, Mizuguchi
+  Laboratory, Osaka University), listed as Unreachable ("server being repaired (maintainer,
+  November 2026)") while its server is repaired; a successful check turns it to Running. A mine
+  listed as Unreachable stays so while its checks fail, whatever the age of its `last_check.since`.
+  The tests count the instances from the data instead of assuming 14.
 - Versions and branding are refreshed every `REGISTRY_REFRESH_MINUTES` (default 360, every six hours:
   the registry advertises the range of mines, not their uptime; was daily at midnight), with 10 s timeouts, and every answer is validated: HTML pages (served by mines behind
   bot protection or retired mines) are no longer stored as versions; the previous value is kept and
