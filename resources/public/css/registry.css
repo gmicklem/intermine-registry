@@ -1,6 +1,12 @@
 /* InterMine Registry: the one stylesheet. No framework, no animation.
    Accent: BlueGenes' @highlight-color (#039BE5, less/variables.less); links use
-   a darker shade of it for contrast. */
+   a darker shade of it for contrast.
+
+   Themes: the light palette is on :root; the dark one applies when the OS
+   prefers dark, unless the visitor chose Light (data-theme="light" on <html>),
+   and when the visitor chose Dark (data-theme="dark"), whatever the OS. The
+   choice is made with the switch in the header (pages.clj, localStorage
+   "registry-theme"); without it the pages follow the OS. */
 
 :root {
   --bg: #ffffff;
@@ -15,11 +21,11 @@
   --up: #42a94b;               /* BlueGenes @success-text-color */
   --down: #a94442;             /* BlueGenes @failure-text-color */
   --code-bg: #f2f4f6;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #17191c;
     --bg-soft: #1f2226;
     --fg: #e6e6e6;
@@ -30,7 +36,23 @@
     --code-bg: #24282d;
     --up: #5cc466;
     --down: #e06c6a;
+    color-scheme: dark;
   }
+}
+
+/* the same dark palette, chosen explicitly */
+:root[data-theme="dark"] {
+  --bg: #17191c;
+  --bg-soft: #1f2226;
+  --fg: #e6e6e6;
+  --fg-soft: #a5abb2;
+  --line: #33373d;
+  --link: #4fc3f7;
+  --header-bg: #26292d;
+  --code-bg: #24282d;
+  --up: #5cc466;
+  --down: #e06c6a;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -63,7 +85,7 @@ p { margin: 0 0 1rem; }
 
 /* header and footer */
 header.site { background: var(--header-bg); color: var(--header-fg); border-bottom: 3px solid var(--accent); }
-header.site .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; min-height: 3.5rem; }
+header.site .wrap { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; flex-wrap: wrap; min-height: 3.5rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
 header.site a { color: var(--header-fg); }
 .brand { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; font-size: 1.05rem; }
 .brand:hover { text-decoration: none; }
@@ -71,6 +93,17 @@ header.site a { color: var(--header-fg); }
 header.site nav { display: flex; gap: 1.25rem; }
 header.site nav a { opacity: 0.85; padding: 0.25rem 0; border-bottom: 2px solid transparent; }
 header.site nav a.active, header.site nav a:hover { opacity: 1; text-decoration: none; border-bottom-color: var(--header-fg); }
+.header-end { display: flex; align-items: center; gap: 0.6rem 1.75rem; flex-wrap: wrap; }
+
+/* theme switch: System / Light / Dark radio buttons drawn as one segmented control */
+.theme-switch { position: relative; display: inline-flex; margin: 0; padding: 0; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 6px; font-size: 0.8rem; line-height: 1; }
+.theme-switch[hidden] { display: none; }
+.theme-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.theme-switch label { padding: 0.35rem 0.6rem; cursor: pointer; color: var(--header-fg); opacity: 0.8; }
+.theme-switch label + input + label { border-left: 1px solid rgba(255, 255, 255, 0.35); }
+.theme-switch label:hover { opacity: 1; }
+.theme-switch input:checked + label { opacity: 1; background: rgba(255, 255, 255, 0.2); font-weight: 600; }
+.theme-switch input:focus-visible + label { outline: 2px solid var(--header-fg); outline-offset: 2px; opacity: 1; }
 
 main.wrap { padding-top: 2.25rem; padding-bottom: 3rem; }
 
@@ -100,11 +133,19 @@ td.organisms { max-width: 20rem; }
 td.when, .muted { color: var(--fg-soft); font-size: 0.875rem; white-space: nowrap; }
 .empty { color: var(--fg-soft); padding: 1rem 0.75rem; }
 
-/* a light tile in both themes, so dark or transparent logos always sit on white */
-.logo { position: relative; display: inline-block; width: 28px; height: 28px; flex: none; box-sizing: border-box; overflow: hidden; border-radius: 4px; background: #fff; border: 1px solid var(--line); }
-.logo .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #5f6368; font-weight: 600; font-size: 0.85rem; }
-.logo img { position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; padding: 3px; object-fit: contain; background: #fff; }
-.big-logo { max-height: 48px; vertical-align: middle; }
+/* Logo tiles: the shade follows the logo, not the page theme (logos/logo-tile
+   measures it): a light tile (white) for dark and coloured logos, a dark tile
+   (near-black) for white or pale ones, in both themes. */
+.logo { position: relative; display: inline-block; width: 28px; height: 28px; flex: none; box-sizing: border-box; overflow: hidden; border-radius: 4px; border: 1px solid var(--line); }
+.logo .placeholder { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 600; font-size: 0.85rem; }
+.logo img { position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; padding: 3px; object-fit: contain; }
+.tile-light, .tile-light img { background: #fff; }
+.tile-light .placeholder { color: #5f6368; }
+.tile-dark, .tile-dark img { background: #1c1e22; }
+.logo.tile-dark { border-color: #45494f; }
+.tile-dark .placeholder { color: #c4c7cc; }
+.big-logo { max-height: 48px; vertical-align: middle; box-sizing: content-box; padding: 4px; border-radius: 4px; border: 1px solid var(--line); }
+.big-logo.tile-dark { border-color: #45494f; }
 
 .dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; vertical-align: middle; }
 .dot.up { background: var(--up); }

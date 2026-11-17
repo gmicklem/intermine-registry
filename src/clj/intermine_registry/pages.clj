@@ -18,6 +18,52 @@
 (defn- css-colour [c]
   (when (and (string? c) (re-matches #"#[0-9A-Fa-f]{3,8}|[a-zA-Z]{3,20}|rgba?\([0-9., %]+\)" c)) c))
 
+(def theme-key
+  "The localStorage key of the visitor's theme choice (\"light\" or \"dark\";
+  absent for System)."
+  "registry-theme")
+
+(def ^:private theme-head-script
+  ;; in <head>, before the stylesheet: applies a stored choice before the
+  ;; first paint, so a dark page never flashes light (or the other way)
+  (str "(function () { try { var t = localStorage.getItem('" theme-key "');"
+       " if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); }"
+       " catch (e) {} })();"))
+
+(def ^:private theme-switch-script
+  ;; shows the switch (hidden without JavaScript, when the page follows the
+  ;; OS) and stores the choice
+  (str "
+(function () {
+  var box = document.getElementById('theme-switch'), root = document.documentElement;
+  if (!box) return;
+  var current = root.getAttribute('data-theme') || 'system';
+  box.querySelectorAll('input').forEach(function (input) {
+    input.checked = input.value === current;
+    input.addEventListener('change', function () {
+      if (!input.checked) return;
+      try {
+        if (input.value === 'system') localStorage.removeItem('" theme-key "');
+        else localStorage.setItem('" theme-key "', input.value);
+      } catch (e) {}
+      if (input.value === 'system') root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', input.value);
+    });
+  });
+  box.hidden = false;
+})();"))
+
+(defn- theme-switch
+  "System / Light / Dark: a radio group (arrow keys move between the
+  choices). Hidden until the script shows it: without JavaScript the pages
+  follow the OS."
+  []
+  [:fieldset#theme-switch.theme-switch {:hidden true}
+   [:legend.sr "Theme"]
+   (for [[v label] [["system" "System"] ["light" "Light"] ["dark" "Dark"]]]
+     (list [:input {:type "radio" :name "theme" :id (str "theme-" v) :value v :checked (= v "system")}]
+           [:label {:for (str "theme-" v)} label]))])
+
 (defn- layout [{:keys [title active]} & body]
   (html5 {:lang "en"}
          [:head
@@ -25,14 +71,17 @@
           [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
           [:title (h (if title (str title " - InterMine Registry") "InterMine Registry"))]
           [:meta {:name "description" :content "The InterMine Registry: the list of InterMine data warehouses (mines) and their web services."}]
+          [:script theme-head-script]
           [:link {:rel "stylesheet" :href "/css/registry.css"}]]
          [:body
           [:header.site
            [:div.wrap
             [:a.brand {:href "/"} [:span.mark "IM"] "InterMine Registry"]
-            [:nav
-             (for [[href label k] [["/" "Mines" :home] ["/docs" "API" :docs] ["/status" "Status" :status]]]
-               [:a {:href href :class (when (= k active) "active")} label])]]]
+            [:div.header-end
+             [:nav
+              (for [[href label k] [["/" "Mines" :home] ["/docs" "API" :docs] ["/status" "Status" :status]]]
+                [:a {:href href :class (when (= k active) "active")} label])]
+             (theme-switch)]]]
           [:main.wrap body]
           [:footer.site
            [:div.wrap
@@ -40,7 +89,8 @@
              "re-implemented 2026; LGPL-2.1; "
              [:a {:href api/repository-url} "source"] "."]
             [:p "To add a mine or correct its details, open a pull request against "
-             [:a {:href (str api/repository-url "/blob/dev/resources/instances.edn")} [:code "resources/instances.edn"]] "."]]]]))
+             [:a {:href (str api/repository-url "/blob/dev/resources/instances.edn")} [:code "resources/instances.edn"]] "."]]]
+          [:script theme-switch-script]]))
 
 (def maintainer-notes-url
   "The README section for mine maintainers."
@@ -78,12 +128,19 @@
 
 (defn- bot-reason? [reason] (contains? #{"bot-protection page" "html instead of json"} reason))
 
+(defn- tile-class
+  "The CSS class of the tile shade for the namespace's cached logo
+  (tile-light or tile-dark, see logos/logo-tile); tile-light without one."
+  [namespace]
+  (str "tile-" (or (logos/tile namespace) "light")))
+
 (defn- logo
   "The registry's copy of the mine's logo (/instances/{namespace}/logo) over
   a neutral mark (its initial), which shows when the registry holds no logo
-  yet or it does not load. The pages never point at the mine's own host."
+  yet or it does not load. The pages never point at the mine's own host. The
+  tile is dark for a light logo (logos/logo-tile), in either page theme."
   [inst]
-  [:span.logo {:aria-hidden "true"}
+  [:span {:class (str "logo " (tile-class (:namespace inst))) :aria-hidden "true"}
    [:span.placeholder (h (subs (str (:name inst) "?") 0 1))]
    (when (logos/cached? (:namespace inst))
      [:img {:src (logos/logo-path (:namespace inst)) :alt "" :loading "lazy" :onerror "this.remove()"}])])
@@ -269,7 +326,8 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 (field-row "Logo" (let [u (safe-url (get-in inst [:images :logo]))]
                                     (cond
                                       (logos/cached? (:namespace inst))
-                                      [:span [:img.big-logo {:src (logos/logo-path (:namespace inst)) :alt (str (h (:name inst)) " logo") :onerror "this.remove()"}]
+                                      [:span [:img {:class (str "big-logo " (tile-class (:namespace inst)))
+                                                    :src (logos/logo-path (:namespace inst)) :alt (str (h (:name inst)) " logo") :onerror "this.remove()"}]
                                        (when u [:span " " [:code (h u)]])]
                                       u [:code (h u)]
                                       :else "")))
@@ -323,7 +381,10 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 [:code "Not checked yet"] "; " [:code "last_check"] " is "
                 [:code "{time, outcome (ok|failed), reason, since}"] ". Unreachable mines stay in the list. "
                 [:code "images.logo"] " is the mine's own logo URL; " [:code "images.logo_cached"]
-                " (when present) is the registry's copy of it, served from " [:code "/instances/{namespace}/logo"] "."]
+                " (when present) is the registry's copy of it, served from " [:code "/instances/{namespace}/logo"] ", and "
+                [:code "images.logo_tile"] " (present with it) is " [:code "\"light\""] " or " [:code "\"dark\""]
+                ": the shade of tile the logo reads well on, from its mean luminance (" [:code "dark"]
+                " for a white or pale logo)."]
                [:pre.json (h (json/generate-string example {:pretty true}))]]))))
 
 (defn status-page [opts]

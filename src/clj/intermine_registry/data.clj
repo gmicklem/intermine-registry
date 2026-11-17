@@ -123,8 +123,10 @@
 
 (defn valid-logo-entry?
   "Is e an entry of the logo index {:file \"flymine.png\" :content-type \"image/png\"
-  :source url :fetched iso :bytes n :sha1 hex}? The cache is not trusted
-  blindly: :file is a plain file name, never a path."
+  :source url :fetched iso :bytes n :sha1 hex :logo-tile \"light\"|\"dark\"}? The
+  cache is not trusted blindly: :file is a plain file name, never a path (a
+  :logo-tile that is not light or dark is dropped on load and computed again,
+  see logos/add-missing-tiles!)."
   [e]
   (boolean (and (map? e)
                 (string? (:file e))
@@ -190,7 +192,7 @@
 ;; ---------------------------------------------------------------- state
 
 (defonce ^{:doc "{:instances [instance ...]   ; file order, refreshed fields merged in
-            :logos {namespace {:file :content-type :source :fetched :bytes :sha1}} ; the cached logos
+            :logos {namespace {:file :content-type :source :fetched :bytes :sha1 :logo-tile}} ; the cached logos
             :refresh {:last-run {:started iso :finished iso :count n}
                       :results {namespace {:checked iso :status s :changes [...] :errors [...]}}}}"}
   state
@@ -289,6 +291,8 @@
         cache (when cache-dir (read-cache cache-dir))]
     (reset! state {:instances (mapv normalize-instance (merge-cache instances cache))
                    :refresh (or (:refresh cache) {})
-                   :logos (into {} (filter (fn [[k v]] (and (string? k) (valid-logo-entry? v)))) (:logos cache))})
+                   :logos (into {} (comp (filter (fn [[k v]] (and (string? k) (valid-logo-entry? v))))
+                                         (map (fn [[k v]] [k (cond-> v (not (#{"light" "dark"} (:logo-tile v))) (dissoc :logo-tile))])))
+                                (:logos cache))})
     (log/info "Loaded" (count instances) "instances" (if cache "and the cache" "(no cache yet)"))
     @state))
