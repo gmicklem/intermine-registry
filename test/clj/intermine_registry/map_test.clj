@@ -61,17 +61,19 @@
 (deftest map-page
   (let [body (page nil)
         ds (dots body)
-        prod (filter :isProduction (data/instances))]
+        prod (filter :isProduction (data/instances))
+        n (count prod)]
     (is (str/includes? body "Where the mines are"))
     (is (str/includes? body "<a class=\"active\" href=\"/map\">Map</a>") "in the header nav, active")
     (is (str/includes? body "viewBox=\"0 0 720 360\""))
     (is (str/includes? body "class=\"land\" d=\"M") "the land outline, inline")
-    (is (= 14 (count (re-seq #"<circle" body))) "a dot per production mine")
-    (is (= 14 (count ds)) "each inside a link to the mine's page")
+    (is (= u/seeded-count n) "the bundled mines are all production")
+    (is (= n (count (re-seq #"<circle" body))) "a dot per production mine")
+    (is (= n (count ds)) "each inside a link to the mine's page")
     (is (= (set (map :namespace prod)) (set (map :ns ds))))
     (is (= (set (map :name prod)) (set (map :name ds))) "named by its <title>")
     (testing "mines at one place are fanned out, not stacked"
-      (is (= 14 (count (set (map (juxt :x :y) ds)))))
+      (is (= n (count (set (map (juxt :x :y) ds)))))
       (is (every? (fn [[a b]] (>= (Math/hypot (- (:x a) (:x b)) (- (:y a) (:y b))) 6.5))
                   (for [a ds b ds :when (neg? (compare (:ns a) (:ns b)))] [a b]))))
     (testing "a label per mine, in one block per cluster"
@@ -83,8 +85,19 @@
     (is (str/includes? body "/map?mines=all")))
   (testing "?mines=all"
     (let [body (page "mines=all")]
-      (is (= 14 (count (dots body))))
+      (is (= (count (data/instances)) (count (dots body))))
       (is (str/includes? body "Show production mines only")))))
+
+(deftest targetmine-is-drawn-alone-at-osaka
+  (let [ds (dots (page nil))
+        tm (first (filter #(= "targetmine" (:ns %)) ds))
+        [x y] (pages/project 34.8225 135.5240)]
+    (is (some? tm) "an Unreachable mine with coordinates still has its dot")
+    (is (= "TargetMine" (:name tm)))
+    (testing "no other mine is near: not fanned out with a cluster, at its own place"
+      (is (< (Math/hypot (- x (:x tm)) (- y (:y tm))) 0.1) "the circle is at the projected position (rounded)")
+      (is (every? #(> (Math/hypot (- (:x tm) (:x %)) (- (:y tm) (:y %))) 20.0)
+                  (remove #(= "targetmine" (:ns %)) ds))))))
 
 (deftest non-production-mines-only-with-mines-all
   (swap! data/state update :instances conj
@@ -98,7 +111,9 @@
   (swap! data/state update :instances conj injected)
   (let [body (page nil)
         listed (not-on-map body)]
-    (is (= 14 (count (dots body))))
+    (is (= (count (filter :isProduction (data/instances)))
+           (inc (count (dots body))))
+        "every production mine but NowhereMine has a dot")
     (is (not-any? #(= "nowheremine" (:ns %)) (dots body)))
     (is (some? listed))
     (is (str/includes? listed "Not on the map"))

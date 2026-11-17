@@ -89,7 +89,7 @@ the route table in `src/clj/intermine_registry/api.clj`). In short:
 - `GET /instances/{namespace}/logo`: the registry's own copy of the mine's logo, or its logo
   override (see [Logos](#logos)); 404 when it holds none yet
 - `GET /{namespace}`: 303 redirect to the mine
-- `GET /health`: `{"status": "ok", "instances": 14, "running": 14, "unreachable": 0, "lastRefresh": ...}`
+- `GET /health`: `{"status": "ok", "instances": 15, "running": 14, "unreachable": 1, "lastRefresh": ...}`
 - `PUT /service/synchronize`, `PUT /service/synchronize/{id}`: refresh now (admin token)
 - `POST/PUT/DELETE /service/instances[/{id}]`: 405, the registry is read-only
 

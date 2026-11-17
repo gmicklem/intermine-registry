@@ -7,6 +7,10 @@
 (def opts {:port 0 :minutes 0 :cache-dir nil :admin-token nil :instances-file nil
            :base-url "https://registry.intermine.org" :concurrency 4})
 
+;; How many mines instances.edn holds, counted from the data so that adding a
+;; mine does not break the tests that count them.
+(def seeded-count (count (data/read-instances nil)))
+
 (defn load-bundled! [] (data/load! opts))
 
 (defn with-bundled-data [f] (load-bundled!) (f))

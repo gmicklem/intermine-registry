@@ -303,7 +303,8 @@
   of the current run of failures, and the status follows the time rule: the
   mine becomes \"Unreachable\" only when the failures have lasted more than
   `hours` (now minus since); until then it keeps the status it had
-  (\"Running\", or \"Not checked yet\" for a mine that has never succeeded)."
+  (\"Running\", \"Not checked yet\" for a mine that has never succeeded, or
+  \"Unreachable\" for a mine listed as such, which a success turns to Running)."
   [instance reason now hours]
   (let [prev (:last_check instance)
         prev-failed? (= "failed" (:outcome prev))]
@@ -311,7 +312,9 @@
       {:status "Running" :last_check {:time now :outcome "ok" :reason nil :since nil}}
       (let [since (if prev-failed? (or (:since prev) (:time prev) now) now)]
         {:status (cond (failing-longer-than? since now hours) "Unreachable"
-                       (= "Not checked yet" (:status instance)) "Not checked yet"
+                       ;; a mine already Unreachable (also one listed so in instances.edn,
+                       ;; with a recent `since`) stays so while its checks fail
+                       (#{"Not checked yet" "Unreachable"} (:status instance)) (:status instance)
                        :else "Running")
          :last_check {:time now :outcome "failed" :reason reason :since since}}))))
 
