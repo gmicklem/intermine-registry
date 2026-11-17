@@ -67,6 +67,9 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   `https://alliancemine.alliancegenome.org/alliancemine` (the registry held the Alliance BlueGenes
   page); the URGI mines (OakMine, RepetDB, WheatMine) and their maintainer URL use the renamed
   domain `urgi.versailles.inrae.fr`, to which every `inra.fr` URL now redirects.
+- Data corrections (17 Nov 2026): the blank locations are filled in: AllianceMine at SGD, Stanford
+  (37.428265, -122.169498, the old registry's YeastMine entry), AquaMine and FAANGMine at the Elsik
+  Lab, University of Missouri (38.940397, -92.327813, as HymenopteraMine and MaizeMine).
 
 ### Removed
 - MongoDB, user accounts, login, the add/edit/delete pages and the write endpoints
