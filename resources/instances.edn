@@ -39,7 +39,7 @@
  {:id "53"
   :name "AllianceMine"
   :namespace "alliancemine"
-  :url "https://www.alliancegenome.org/bluegenes/alliancemine"
+  :url "https://alliancemine.alliancegenome.org/alliancemine"
   :description "AllianceMine integrates many types of data for all the Model Organisms Fly, Worm, Zebrafish, Yeast, Rat, and Mouse. You can run flexible queries, export results and analyse lists of data."
   :organisms ["MODs"]
   :neighbours ["MODs"]
@@ -221,13 +221,13 @@
  {:id "45"
   :name "OakMine"
   :namespace "oakmine"
-  :url "https://urgi.versailles.inra.fr/OakMine_PM1N"
+  :url "https://urgi.versailles.inrae.fr/OakMine_PM1N"
   :description "Quercus robur annotation database"
   :organisms ["Q. robur"]
   :neighbours ["Plants"]
   :location {:latitude "48.802754" :longitude "2.087040"}
   :maintainerOrgName "URGI"
-  :maintainerUrl "https://urgi.versailles.inra.fr/"
+  :maintainerUrl "https://urgi.versailles.inrae.fr/"
   :maintainerEmail ""
   :maintainerGithubUrl ""
   :twitter "inra_urgi"
@@ -286,13 +286,13 @@
  {:id "20"
   :name "RepetDB"
   :namespace "repetdbmine"
-  :url "http://urgi.versailles.inra.fr/repetdb"
+  :url "https://urgi.versailles.inrae.fr/repetdb"
   :description "Repeats intermine database"
   :organisms ["Arabidopsis lyrata subsp. lyrata" "Arabidopsis thaliana" "Arabis alpina" "Botrytis cinerea B05.10" "Brassica rapa" "Capsella rubella" "Schrenkiella parvula" "Vitis vinifera"]
   :neighbours ["Other Mines"]
   :location {:latitude "48.802754" :longitude "2.087040"}
   :maintainerOrgName "URGI"
-  :maintainerUrl "https://urgi.versailles.inra.fr/"
+  :maintainerUrl "https://urgi.versailles.inrae.fr/"
   :maintainerEmail ""
   :maintainerGithubUrl ""
   :twitter "inra_urgi"
@@ -330,13 +330,13 @@
  {:id "46"
   :name "WheatMine"
   :namespace "wheatmine"
-  :url "https://urgi.versailles.inra.fr/WheatMine"
+  :url "https://urgi.versailles.inrae.fr/WheatMine"
   :description "Wheat IWGSC RefSeq v1.0"
   :organisms ["T. aestivum"]
   :neighbours ["Plants"]
   :location {:latitude "48.802754" :longitude "2.087040"}
   :maintainerOrgName "URGI"
-  :maintainerUrl "https://urgi.versailles.inra.fr/"
+  :maintainerUrl "https://urgi.versailles.inrae.fr/"
   :maintainerEmail ""
   :maintainerGithubUrl ""
   :twitter "inra_urgi"
