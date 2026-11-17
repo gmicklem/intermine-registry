@@ -1,36 +1,124 @@
 # InterMine Registry
-InterMine Registry is a place where all the up-to-date instances information is stored and can be consumed by applications like Blue Genes, iOS, InterMine R, the friendly mine tool or available to everyone who needs it. The core of InterMine Registry is its [RESTful API](http://registry.intermine.org/api-docs/). Running over Node.js integrated with MongoDB, it contains methods (endpoints) to administer the instances on the registry (add, update & delete) and search among them. Furthermore, InterMine Registry also includes a nice fully responsive front-end [web application](http://registry.intermine.org/), from which everyone can see all the InterMine instances and search among them.
 
-## GSoC 2017 ##
-[InterMine registry](http://registry.intermine.org/) was entirely implemented and developed as a GSoC 2017 program project by the student [Leonardo Kuffo](https://github.com/lkuffo). Click [here](https://github.com/intermine/intermine-registry/commits/master?author=lkuffo) to find all of Leonardo's contributions for the project as evidence of his work.
+The InterMine Registry is the list of public [InterMine](https://intermine.org) instances (mines)
+and an API that serves it. BlueGenes, the InterMine webapps (to find their own namespace), the
+InterMine client libraries read it, and Galaxy users pass through its hand-over pages, at
+[registry.intermine.org](https://registry.intermine.org).
 
+Version 2 is a small Clojure service: the list of mines is a version-controlled file,
+[`resources/instances.edn`](resources/instances.edn); the server re-implements the read API of
+the original registry exactly, refreshes each mine's versions and branding on a schedule, and
+renders a few plain pages. There is no database and there are no accounts.
 
-## Registry API ##
+## Acknowledgements
 
+The registry and its API were designed and built by [Leonardo Kuffo](https://github.com/lkuffo) in
+his Google Summer of Code 2017 project with InterMine. Later contributors to the Node
+implementation (`git shortlog -s dev`): Yo Yehudi, Daniela Butano, himanshukumar660, Aman Dwivedi,
+Raghav Sharma, Akashdeep Ramnaney, itolimaesther, Ankit Kumar, Arunan Sugunakumar, JosephBadua,
+akshat, Aastha Bist, CoryWritesCode, JGO613, Laksh Singla, Pavika and dmahajan980. The 2026
+re-implementation keeps their API so that every existing client works unchanged.
 
-The core of the InterMine Registry App is the restFUL API. It contains endpoints to search and administer instances. These endpoints can be reached through the following base path: `http://intermine.org/registry/service/`
+## Adding or changing a mine
 
+Open a pull request against [`resources/instances.edn`](resources/instances.edn): copy an
+existing entry and edit it. The comment at the top of the file describes every field. CI checks the
+file (clojure.spec: required keys, URL shapes, unique namespaces and ids, `isProduction` a
+boolean); the server refuses to start with an invalid file and lists the problems. You only set the
+hand-maintained fields; versions, status, colours and logo are fetched from the mine.
 
-- `POST`    /instances     Add an instance to the registry.
-- `GET`     /instances     Get all the instances from the registry.
-- `GET`     /instances/{instanceIdOrName}    Get an instance by its ID or Name.
-- `PUT`     /instances/{instanceId}    Update an instance.
-- `DELETE`  /instances/{instanceId}   Deletes an instance.
-- `PUT`     /synchronize   Update the branding & version information of every instance.
-- `PUT`     /synchronize/{instanceIdOrName}    Update the branding & version information of the specified instance.
+Never change a mine's `namespace`: it is part of URLs that mines and clients store
+(`registry.intermine.org/<namespace>`).
 
-You can check the [detailed API documentation](http://registry.intermine.org/api-docs/) for more information and testing.
+## Running
 
-## Installation ##
+Needs JDK 17+ and the [Clojure CLI](https://clojure.org/guides/install_clojure).
 
-Please visit [getting started](getting-started.md)
+```bash
+clojure -M -m intermine-registry.core     # http://localhost:3000
+clojure -M:test                           # tests (includes the check of instances.edn)
+clojure -M:fmt check                      # formatting (cljfmt; `fix` to apply)
+clojure -T:build uber                     # target/intermine-registry.jar
+java -jar target/intermine-registry.jar
+```
 
-**Troubleshooting tips** - The installation might fail because of the `bcrypt` dependency if you're not running on a stable version of node. `Bcrypt` doesn't support unstable version of node, so switch to the current stable version of the [node](https://nodejs.org/) , you can use [nvm](http://nvm.sh) to manage your node version.
+Docker:
 
-### Configure the API Docs ###
+```bash
+docker build -t intermine-registry .
+docker run -p 3000:3000 -v registry-cache:/cache intermine-registry
+```
 
-The API-DOCS are generated based on the `swagger.json` file in the repository. In order for the API-DOCS to work correctly, on this file you have to specify the "HOST" and the "SCHEME" of the app (http or https).
+[`docker-compose.example.yml`](docker-compose.example.yml) is a Compose service with a health
+check, ready to sit next to the mines behind the reverse proxy that terminates TLS.
 
-## Detailed Documentation ##
+### Configuration
 
-For more in-deep information about the code, and detailed guidelines on the project, please, visit the following [link](https://docs.google.com/document/d/1ODWOBPA0XePfXmpKN75GQoBPjvFH9Rnp5yIooD1szXw/edit?usp=sharing).
+All configuration is by environment variable:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `3000` | HTTP port (as the Node app) |
+| `REGISTRY_REFRESH_MINUTES` | `60` | refresh every mine this often; `0` disables the schedule. The first run is 10 s after start-up. |
+| `REGISTRY_CACHE_DIR` | `./cache` (`/cache` in Docker) | where `registry-cache.edn` keeps the last refreshed values, so a restart does not lose them |
+| `REGISTRY_ADMIN_TOKEN` | unset | enables `PUT /service/synchronize[/{id}]` with `Authorization: Bearer <token>`; unset, those answer 405 |
+| `REGISTRY_INSTANCES_FILE` | the bundled `resources/instances.edn` | path of an instances file to use instead |
+| `REGISTRY_BASE_URL` | `https://registry.intermine.org` | absolute links on the pages and in the API docs |
+
+## API
+
+Documented on the running server at [`/docs`](https://registry.intermine.org/docs) (generated from
+the route table in `src/clj/intermine_registry/api.clj`). In short:
+
+- `GET /service/instances`: running production instances, sorted by name; `?mines=all|dev|prod`,
+  `?q=` (organism, description word or part of the name).
+  `{"instances": [...], "statusCode": 200, "executionTime": "11/17/2026, 2:10:58 AM"}`
+- `GET /service/instances/{id|namespace|name}`: `{"instance": {...}, "statusCode": 200, ...}`;
+  404 `{"statusCode": 404, "errorMsg": "Not Found", "message": ...}`
+- `GET /service/namespace?url=<mine url>`: `{"statusCode": 200, "namespace": "flymine"}`
+- `GET /{namespace}`: 303 redirect to the mine
+- `GET /health`: `{"status": "ok", "instances": 14, "running": 14, "lastRefresh": ...}`
+- `PUT /service/synchronize`, `PUT /service/synchronize/{id}`: refresh now (admin token)
+- `POST/PUT/DELETE /service/instances[/{id}]`: 405, the registry is read-only
+
+Pages: `/` (the mines, with a filter), `/instances/{namespace}`, `/docs`, `/status` (the last
+refresh of each mine: when, what changed, what failed), and the Galaxy hand-over pages
+`/im-to-galaxy?GALAXY_URL=` and `/galaxy-to-im?URL=`.
+
+## How the refresh works
+
+For each mine, in parallel with at most 4 mines at a time and 10 s timeouts, the server calls
+`{url}/service/version/intermine`, `/service/version/release`, `/service/version` and
+`/service/branding`, with the rules of the Node app's `scheduled/automaticUpdate.js`:
+
+- `status` is `"Running"` when `/service/version/intermine` answers 200 with a version, else
+  `"Not Running"`; `/service/instances` lists only running mines (as before);
+- the version answers are cleaned (quotes, brackets and slashes removed) and a version equal to
+  the API version is blanked (a mine answering every path with the same page);
+- `colors` and `images` come from `properties.colors` and `properties.images` of the branding JSON;
+- `last_time_updated` is set; `organisms` and every other hand-maintained field are not touched.
+
+New in 2.0: every answer is validated (`api_version` an integer string, versions short strings, not
+HTML pages or unsubstituted `@TOKENS@`); a rejected answer keeps the previous value and is
+reported on `/status`. The refreshed values go to the cache file, never back into
+`instances.edn`; the values in `instances.edn` are only the initial ones.
+
+## Migrating from the Node version (1.x)
+
+- No MongoDB: the data is `resources/instances.edn`, seeded from the live registry on
+  17 Nov 2026 (the 14 running instances; the 29 instances marked "Not Running" in Mongo were not
+  carried over).
+- No accounts, no login, no add/edit pages: `POST`, `PUT` and `DELETE` on `/service/instances`
+  answer 405; changes are pull requests.
+- Instances no longer carry Mongo's `_id` and `__v` (no known client reads them; the InterMine
+  webapp's Java client maps `__v` to an int that defaults to 0).
+- `/service/namespace?url=` prefers an exact URL match (the old substring match could answer a beta
+  mine for the production URL).
+- `/api-docs` (Swagger UI) redirects to `/docs`.
+- `PUT /service/synchronize` uses a bearer token instead of HTTP Basic users.
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+LGPL-2.1, see [LICENSE](LICENSE).

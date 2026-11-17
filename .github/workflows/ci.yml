@@ -1,0 +1,93 @@
+# Continuous integration for the InterMine Registry: formatting, tests,
+# uberjar with a smoke start, Docker image with a health check.
+name: CI
+
+on:
+  push:
+    branches: [maint-2026, dev, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: DeLaGuardo/setup-clojure@13.0
+        with:
+          cli: 1.12.0.1530
+
+      - name: Cache Maven and gitlibs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: deps-${{ hashFiles('deps.edn') }}
+
+      - name: Check formatting (cljfmt)
+        run: clojure -M:fmt check
+
+      # Includes the check of resources/instances.edn (clojure.spec) and the
+      # API compatibility tests against the captured Node registry answers.
+      - name: Tests
+        run: clojure -M:test
+
+      - name: Uberjar
+        run: clojure -T:build uber
+
+      - name: Smoke start
+        run: |
+          PORT=3100 REGISTRY_REFRESH_MINUTES=0 REGISTRY_CACHE_DIR="$RUNNER_TEMP/cache" \
+            java -jar target/intermine-registry.jar > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS localhost:3100/health && break
+            sleep 1
+          done
+          curl -fsS localhost:3100/health
+          test "$(curl -fsS localhost:3100/service/instances | jq '.instances | length')" -gt 0
+          curl -fsS -o /dev/null localhost:3100/
+          curl -fsS -o /dev/null localhost:3100/docs
+          kill %1 || true
+          cat "$RUNNER_TEMP/server.log"
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t intermine-registry:ci .
+
+      - name: Run it and wait for the health check
+        run: |
+          docker run -d --name registry-ci -p 3200:3000 -e REGISTRY_REFRESH_MINUTES=0 intermine-registry:ci
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' registry-ci)
+            echo "health: $status"
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          test "$(docker inspect -f '{{.State.Health.Status}}' registry-ci)" = healthy
+          curl -fsS localhost:3200/service/instances | jq '.instances | length'
+          docker logs registry-ci
+          docker rm -f registry-ci

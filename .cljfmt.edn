@@ -1,0 +1,2 @@
+;; Read by `clojure -M:fmt check|fix` (cljfmt 0.12).
+{:paths ["src" "test" "build.clj"]}
