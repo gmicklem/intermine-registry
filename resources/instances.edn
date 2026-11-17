@@ -25,8 +25,10 @@
 ;; Refreshed from the mine by the server (the values here are the initial
 ;; cache, captured from the Node registry on 17 Nov 2026; you do not need to
 ;; set them for a new mine): :api_version, :intermine_version,
-;; :release_version, :status ("Running" / "Not Running"), :colors, :images,
-;; :last_time_updated. The refreshed values are kept in REGISTRY_CACHE_DIR, not
+;; :release_version, :status ("Running" / "Unreachable" / "Not checked yet"),
+;; :last_check ({:time :outcome :reason :since}: the last check of the mine; a
+;; mine with :last_time_updated and no :last_check counts as checked ok at that
+;; time), :colors, :images, :last_time_updated. The refreshed values are kept in REGISTRY_CACHE_DIR, not
 ;; written back to this file.
 ;;
 ;; Seeded from https://registry.intermine.org/service/instances on 17 Nov 2026

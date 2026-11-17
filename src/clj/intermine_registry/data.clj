@@ -82,7 +82,16 @@
 (s/def ::api_version (s/or :empty #{""} :version api-version?))
 (s/def ::intermine_version (s/or :empty #{""} :version version-string?))
 (s/def ::release_version (s/or :empty #{""} :version version-string?))
-(s/def ::status #{"Running" "Not Running"})
+(def statuses
+  "The values of `status`. \"Not Running\" is what version 2.0 before im-bdy.15
+  and the Node registry wrote; `normalize-instance` turns it into \"Unreachable\"."
+  #{"Running" "Unreachable" "Not checked yet" "Not Running"})
+(s/def ::status statuses)
+(s/def ::outcome #{"ok" "failed"})
+(s/def ::reason (s/nilable (s/and string? #(<= (count %) 200))))
+(s/def ::time iso-timestamp?)
+(s/def ::since (s/nilable iso-timestamp?))
+(s/def ::last_check (s/nilable (s/keys :req-un [::time ::outcome ::reason] :opt-un [::since])))
 (s/def ::colors (s/map-of keyword? (s/or :string string? :map (s/map-of keyword? string?))))
 (s/def ::images (s/map-of keyword? string?))
 (s/def ::last_time_updated (s/nilable iso-timestamp?))
@@ -92,7 +101,7 @@
                    ::location ::maintainerOrgName ::maintainerUrl ::maintainerEmail
                    ::maintainerGithubUrl ::twitter ::isProduction ::created_at]
           :opt-un [::api_version ::intermine_version ::release_version ::status
-                   ::colors ::images ::last_time_updated]))
+                   ::colors ::images ::last_time_updated ::last_check]))
 
 (defn- duplicates [xs]
   (->> (frequencies xs) (filter #(> (val %) 1)) (map key) sort))
@@ -110,7 +119,8 @@
 
 (def refreshed-keys
   "The keys the refresh sets."
-  [:api_version :intermine_version :release_version :status :colors :images :last_time_updated])
+  [:api_version :intermine_version :release_version :status :colors :images :last_time_updated
+   :last_check])
 
 (defn- explain-problems
   "A readable list of what is wrong with the instances vector."
@@ -181,6 +191,7 @@
     :colors (s/valid? ::colors v)
     :images (s/valid? ::images v)
     :last_time_updated (s/valid? ::last_time_updated v)
+    :last_check (s/valid? ::last_check v)
     false))
 
 (defn read-cache
@@ -224,12 +235,35 @@
       (log/warn "Could not write the cache in" (str dir) (.getMessage e))
       nil)))
 
+;; ---------------------------------------------------------------- check outcome
+
+(defn normalize-instance
+  "Gives an instance the `status` and `last_check` of version 2.0 (pure):
+  - last_check present: unchanged;
+  - status \"Not Running\" (the Node registry, or 2.0 before im-bdy.15): \"Unreachable\",
+    a failed last_check at last_time_updated, reason \"not running (recorded
+    before reasons were kept)\";
+  - last_time_updated present (the seeded capture, a pre-im-bdy.15 cache):
+    \"Running\", an ok last_check at last_time_updated;
+  - otherwise \"Not checked yet\" and last_check nil."
+  [{:keys [status last_check last_time_updated] :as inst}]
+  (cond
+    (contains? inst :last_check) (cond-> inst (nil? status) (assoc :status "Not checked yet"))
+    (nil? last_time_updated) (assoc inst :status "Not checked yet" :last_check nil)
+    (= "Not Running" status) (assoc inst
+                                    :status "Unreachable"
+                                    :last_check {:time last_time_updated :outcome "failed"
+                                                 :reason "not running (recorded before reasons were kept)"
+                                                 :since last_time_updated})
+    :else (assoc inst :status "Running"
+                 :last_check {:time last_time_updated :outcome "ok" :reason nil :since nil})))
+
 (defn load!
   "Reads the instances file and the cache into state. Throws if the file is invalid."
   [{:keys [instances-file cache-dir]}]
   (let [instances (read-instances instances-file)
         cache (when cache-dir (read-cache cache-dir))]
-    (reset! state {:instances (merge-cache instances cache)
+    (reset! state {:instances (mapv normalize-instance (merge-cache instances cache))
                    :refresh (or (:refresh cache) {})})
     (log/info "Loaded" (count instances) "instances" (if cache "and the cache" "(no cache yet)"))
     @state))

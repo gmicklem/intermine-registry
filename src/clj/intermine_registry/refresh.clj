@@ -2,9 +2,10 @@
   "Refreshes the volatile fields of each instance from the mine itself, as
   the Node app's scheduled/automaticUpdate.js and routes/synchronize.js did:
 
-    GET {url}/service/version/intermine -> intermine_version; HTTP 200 means
-                                           status \"Running\", anything else
-                                           \"Not Running\"
+    GET {url}/service/version/intermine -> intermine_version; a version
+                                           answer means the check succeeded
+                                           (see apply-results for status and
+                                           last_check)
     GET {url}/service/version/release   -> release_version
     GET {url}/service/version           -> api_version
     GET {url}/service/branding          -> colors, images (properties.colors,
@@ -20,7 +21,11 @@
   - every value is validated (api_version an integer string, versions short
     strings, not HTML pages); a rejected value keeps the previous one and is
     reported on /status, and a mine whose /service/version/intermine answers
-    200 with something that is not a version is \"Not Running\";
+    200 with something that is not a version has a failed check;
+  - a failed check never hides a mine: the instance keeps its last known
+    versions and branding, gets a `last_check` {:time :outcome :reason} and,
+    from the second consecutive failure, status \"Unreachable\" (see
+    classify-failure for the reasons);
   - 10 s timeouts (the Node code used 2-5 s), a User-Agent header, at most
     `concurrency` mines at a time;
   - a failed branding call keeps the previous colors and images."
@@ -69,11 +74,14 @@
                            :body (str (.body ^java.net.http.HttpResponse resp))})))
           (.exceptionally (reify java.util.function.Function
                             (apply [_ e]
-                              {:error (let [c (or (.getCause ^Throwable e) e)]
-                                        (str (.getSimpleName (class c))
-                                             (when-let [m (.getMessage ^Throwable c)] (str ": " m))))})))))
+                              (let [c (or (.getCause ^Throwable e) e)]
+                                {:error (str (.getSimpleName (class c))
+                                             (when-let [m (.getMessage ^Throwable c)] (str ": " m)))
+                                 :error-class (.getSimpleName (class c))
+                                 :error-message (.getMessage ^Throwable c)}))))))
     (catch Exception e
-      (CompletableFuture/completedFuture {:error (str "bad URL " url ": " (.getMessage e))}))))
+      (CompletableFuture/completedFuture {:error (str "bad URL " url ": " (.getMessage e))
+                                          :error-class "BadUrl"}))))
 
 (defn sanitize
   "The Node app's clean-up of a version answer: strip `'\"<>{}[]\\/ and trim."
@@ -87,15 +95,64 @@
         :else (let [s (str/trim body)]
                 (str "not a version: " (pr-str (subs s 0 (min 60 (count s))))))))
 
+(defn html-body?
+  "Does the body look like a web page (a bot-protection challenge, an error
+  page) rather than a version number or JSON?"
+  [body]
+  (let [b (str/triml (str body))]
+    (boolean (or (str/starts-with? b "<")
+                 (re-find #"(?i)<!doctype|<html[\s>]|<head[\s>]|<body[\s>]" b)))))
+
+(defn bot-protection-body?
+  "Is this web page a bot-protection challenge: it mentions Anubis, has a
+  `<meta name=\"generator\"` tag (Anubis sets one), or a <title> that speaks
+  of a challenge, a verification or being a bot."
+  [body]
+  (let [b (str body)
+        title (second (re-find #"(?is)<title[^>]*>(.*?)</title>" b))]
+    (boolean (or (re-find #"(?i)anubis" b)
+                 (re-find #"(?i)<meta\s+name\s*=\s*[\"']generator[\"']" b)
+                 (and title (re-find #"(?i)challenge|verif|not a bot|just a moment|checking your browser" title))))))
+
+(defn classify-failure
+  "A short reason for a response that is not a version answer:
+    exception                  \"timeout\" (HttpTimeoutException, a timed-out connect),
+                               \"connection refused\", \"unknown host\", \"TLS error\",
+                               \"bad URL\", \"connection error: <Class>\", else the class name
+    HTML with anubis, a <meta name=\"generator\"> or a challenge/verification
+    title (whatever the status)  \"bot-protection page\"
+    non-2xx                    \"http NNN\"
+    other HTML                 \"html instead of json\"
+    too large                  \"answer too large\"
+    otherwise                  \"invalid version string\""
+  [{:keys [status error error-class error-message body]}]
+  (cond
+    (or error error-class)
+    (let [msg (str/lower-case (str error-message))]
+      (case error-class
+        ("HttpTimeoutException" "HttpConnectTimeoutException" "TimeoutException") "timeout"
+        "ConnectException" (if (str/includes? msg "timed out") "timeout" "connection refused")
+        "UnknownHostException" "unknown host"
+        ("SSLHandshakeException" "SSLException" "SSLPeerUnverifiedException" "CertificateException") "TLS error"
+        "BadUrl" "bad URL"
+        ("IOException" "ClosedChannelException" "EOFException" "SocketException")
+        (str "connection error: " error-class)
+        (or error-class "unknown error")))
+    (and (html-body? body) (bot-protection-body? body)) "bot-protection page"
+    (not (and status (<= 200 status 299))) (str "http " status)
+    (html-body? body) "html instead of json"
+    (> (count body) max-body-chars) "answer too large"
+    :else "invalid version string"))
+
 (defn- version-result
   "{:value v} if the response is a 200 whose sanitized body passes valid?,
-  else {:error message}."
+  else {:error message :reason short-reason}."
   [resp valid?]
   (let [{:keys [status body]} resp
         v (when (and (= 200 status) (<= (count body) max-body-chars)) (sanitize body))]
-    (if (and v (valid? v))
+    (if (and v (not (str/blank? v)) (valid? v) (not (html-body? body)))
       {:value v}
-      {:error (describe-failure resp)})))
+      {:error (describe-failure resp) :reason (classify-failure resp)})))
 
 (defn- string-map?
   "{keyword string} or {keyword {keyword string}}."
@@ -136,23 +193,47 @@
      :api (version-result (:api responses) data/api-version?)
      :branding (branding-result (:branding responses))}))
 
+(def unreachable-after
+  "Consecutive failed checks before a Running mine is marked Unreachable."
+  2)
+
+(defn- check-state
+  "{:status :last_check} after this check (pure). A success: Running, outcome
+  ok. A failure is recorded in last_check at once; the status becomes
+  \"Unreachable\" at the second consecutive failure, or at the first when the
+  mine was not Running before (never checked: nothing to keep); the first
+  failure of a Running mine keeps \"Running\" (two-strikes rule). `since` is
+  the time of the first failure of the current run of failures."
+  [instance reason now]
+  (let [prev (:last_check instance)
+        prev-failed? (= "failed" (:outcome prev))]
+    (if-not reason
+      {:status "Running" :last_check {:time now :outcome "ok" :reason nil :since nil}}
+      {:status (if (and (= "Running" (:status instance)) (not prev-failed?)) "Running" "Unreachable")
+       :last_check {:time now :outcome "failed" :reason reason
+                    :since (if prev-failed? (or (:since prev) (:time prev) now) now)}})))
+
 (defn apply-results
   "The instance updated with the fetch results (pure). Returns
-  {:instance updated :changes [{:field k :from a :to b}] :errors [..]}."
+  {:instance updated :changes [{:field k :from a :to b}] :errors [..]}.
+  When /service/version/intermine gave a version the check succeeded and all
+  values are applied; otherwise only status, last_check and last_time_updated
+  change (the last known versions and branding are kept)."
   [instance {:keys [intermine release api branding]} now]
-  (let [errors (cond-> []
+  (let [ok? (some? (:value intermine))
+        errors (cond-> []
                  (:error intermine) (conj (str "/service/version/intermine: " (:error intermine)))
                  (:error release) (conj (str "/service/version/release: " (:error release)))
                  (:error api) (conj (str "/service/version: " (:error api)))
                  (:error branding) (conj (str "/service/branding: " (:error branding)))
                  (:warning branding) (conj (str "/service/branding: " (:warning branding))))
-        updated (cond-> (assoc instance
-                               :status (if (:value intermine) "Running" "Not Running")
-                               :last_time_updated now)
-                  (:value intermine) (assoc :intermine_version (:value intermine))
-                  (:value release) (assoc :release_version (:value release))
-                  (:value api) (assoc :api_version (:value api))
-                  (not (:error branding)) (assoc :colors (:colors branding) :images (:images branding)))
+        updated (-> (merge instance (check-state instance (when-not ok? (or (:reason intermine) "invalid version string")) now))
+                    (assoc :last_time_updated now))
+        updated (cond-> updated
+                  ok? (assoc :intermine_version (:value intermine))
+                  (and ok? (:value release)) (assoc :release_version (:value release))
+                  (and ok? (:value api)) (assoc :api_version (:value api))
+                  (and ok? (not (:error branding))) (assoc :colors (:colors branding) :images (:images branding)))
         ;; as the Node code: a version equal to the API version is not one
         updated (cond-> updated
                   (and (seq (:api_version updated)) (= (:api_version updated) (:release_version updated)))
@@ -187,7 +268,8 @@
                  (update-in [:refresh :results]
                             merge (into {} (map (fn [[ns r]]
                                                   [ns (-> (select-keys r [:checked :ms :changes :errors])
-                                                          (assoc :status (get-in r [:instance :status])))]))
+                                                          (assoc :status (get-in r [:instance :status])
+                                                                 :last_check (get-in r [:instance :last_check])))]))
                                         by-ns))
                  (cond-> started (assoc-in [:refresh :last-run] {:started started
                                                                  :finished (data/iso-now)

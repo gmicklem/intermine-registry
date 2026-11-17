@@ -46,7 +46,8 @@
     (doseq [[c o] (map vector (get captured "instances") (get ours "instances"))
             :let [ns (get c "namespace")]]
       (testing ns
-        (is (= (set (remove dropped-keys (keys c))) (set (keys o))) "same key set (minus _id, __v)")
+        (is (= (set (remove dropped-keys (keys c))) (disj (set (keys o)) "last_check"))
+            "same key set (minus _id, __v; plus last_check)")
         (doseq [k (keys (expected-instance c))]
           (is (= (get (expected-instance c) k) (get o k)) (str ns " " k)))
         (is (string? (get o "id")))))))
@@ -66,7 +67,10 @@
   (let [captured (u/capture "instance-flymine.json")
         ours (u/body-json (u/request :get "/service/instances/flymine"))]
     (is (= (set (keys captured)) (set (keys ours))))
-    (is (= (expected-instance (get captured "instance")) (get ours "instance")))
+    (is (= (expected-instance (get captured "instance")) (dissoc (get ours "instance") "last_check")))
+    (is (= {"time" (get-in captured ["instance" "last_time_updated"]) "outcome" "ok" "reason" nil "since" nil}
+           (get-in ours ["instance" "last_check"]))
+        "the seeded capture counts as an ok check at its last_time_updated")
     (testing "by id, by name, case-insensitive"
       (is (= "flymine" (get-in (u/body-json (u/request :get "/service/instances/35")) ["instance" "namespace"])))
       (is (= "flymine" (get-in (u/body-json (u/request :get "/service/instances/FlyMine")) ["instance" "namespace"])))
@@ -143,3 +147,28 @@
   (is (= 302 (:status (u/request :get "/service"))))
   (testing "CORS preflight"
     (is (= 204 (:status (u/request :options "/service/instances"))))))
+
+(defn- make-unreachable! [ns reason]
+  (swap! intermine-registry.data/state update :instances
+         (fn [insts] (mapv #(if (= ns (:namespace %))
+                              (assoc % :status "Unreachable"
+                                     :last_check {:time "2026-11-18T10:00:00.000Z" :outcome "failed"
+                                                  :reason reason :since "2026-11-17T09:00:00.000Z"})
+                              %)
+                           insts))))
+
+(deftest unreachable-mines-stay-listed
+  (make-unreachable! "flymine" "bot-protection page")
+  (let [insts (get (u/body-json (u/request :get "/service/instances")) "instances")
+        fly (first (filter #(= "flymine" (get % "namespace")) insts))]
+    (is (= 14 (count insts)) "still listed by default")
+    (is (= "Unreachable" (get fly "status")))
+    (is (= {"time" "2026-11-18T10:00:00.000Z" "outcome" "failed" "reason" "bot-protection page"
+            "since" "2026-11-17T09:00:00.000Z"}
+           (get fly "last_check")))
+    (is (= (get-in (u/capture "instance-flymine.json") ["instance" "api_version"]) (get fly "api_version"))))
+  (is (= 14 (count (get (u/body-json (u/request :get "/service/instances" {:query "mines=all"})) "instances"))))
+  (is (= "Unreachable" (get-in (u/body-json (u/request :get "/service/instances/flymine")) ["instance" "status"])))
+  (let [h (u/body-json (u/request :get "/health"))]
+    (is (= 13 (get h "running")))
+    (is (= 1 (get h "unreachable")))))

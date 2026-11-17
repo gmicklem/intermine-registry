@@ -16,7 +16,7 @@
 (def json-key-order
   "The key order of the Node app's answers (Mongo document order)."
   [:location :colors :images :neighbours :organisms :id :name :url :created_at
-   :last_time_updated :status :isProduction :twitter :description :api_version
+   :last_time_updated :status :last_check :isProduction :twitter :description :api_version
    :release_version :intermine_version :maintainerOrgName :maintainerUrl
    :maintainerEmail :maintainerGithubUrl :namespace])
 
@@ -65,11 +65,11 @@
 
 (defn select-instances
   "The instances GET /service/instances returns for the query params:
-  running ones only, filtered by mines and q, sorted by name (binary order,
-  as Mongo's sort)."
+  filtered by mines and q, sorted by name (binary order, as Mongo's sort).
+  Whatever its status: a failed check never hides a mine (it is shown as
+  Unreachable, with the reason in last_check)."
   [instances {:strs [q mines]}]
   (->> instances
-       (filter #(= "Running" (:status %)))
        (filter (production-filter mines))
        (filter #(or (str/blank? q) (matches-q? q %)))
        (sort-by :name)))
@@ -149,6 +149,7 @@
     (json-response 200 (array-map :status "ok"
                                   :instances (count insts)
                                   :running (count (filter #(= "Running" (:status %)) insts))
+                                  :unreachable (count (filter #(= "Unreachable" (:status %)) insts))
                                   :lastRefresh (:finished last-run)))))
 
 (defn- bearer-token [req]
@@ -199,7 +200,7 @@
 
 (def routes-doc
   [{:method "GET" :path "/service/instances"
-    :summary "The running instances, sorted by name."
+    :summary "The instances, sorted by name; unreachable ones are listed too (status \"Unreachable\", the reason in last_check)."
     :params [["mines" "optional: absent = production instances only; dev = non-production only; prod = production only; all (or any other value) = both"]
              ["q" "optional: search; matches an organism exactly, a word of the description, or part of the name (case-insensitive)"]]
     :example "/service/instances"
@@ -223,7 +224,7 @@
     :summary "Liveness: instance counts and the time of the last refresh."
     :params []
     :example "/health"
-    :returns "{\"status\": \"ok\", \"instances\": n, \"running\": n, \"lastRefresh\": \"...\"}"}
+    :returns "{\"status\": \"ok\", \"instances\": n, \"running\": n, \"unreachable\": n, \"lastRefresh\": \"...\"}"}
    {:method "PUT" :path "/service/synchronize"
     :summary "Refresh every instance now (admin)."
     :params [["Authorization" "header: Bearer $REGISTRY_ADMIN_TOKEN (405 when the server has no token, 401 when wrong)"]]
