@@ -19,8 +19,12 @@
 ;;                       may be empty): the mine's dot on the /map page
 ;;   :maintainerOrgName, :maintainerUrl, :maintainerEmail, :maintainerGithubUrl,
 ;;   :twitter            strings, may be empty
-;;   :isProduction       true for production mines (listed by default),
-;;                       false for dev/beta mines (listed with ?mines=all|dev)
+;;   :isProduction       true for production mines (listed by default); false
+;;                       marks a test mine, one a deployer wants to check in
+;;                       BlueGenes before releasing it. A test mine is not in the
+;;                       public list: it is listed only with ?mines=all or
+;;                       ?mines=test (alias ?mines=dev) and tagged "test" on the
+;;                       pages. (The field keeps its name, isProduction, in the API.)
 ;;   :created_at         ISO 8601 timestamp of when the mine was added (or nil)
 ;;   :logo-override      optional: the file name of a logo the registry carries
 ;;                       for the mine, under resources/public/logos/ (e.g.

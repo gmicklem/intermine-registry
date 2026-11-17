@@ -27,6 +27,10 @@ file (clojure.spec: required keys, URL shapes, unique namespaces and ids, `isPro
 boolean); the server refuses to start with an invalid file and lists the problems. You only set the
 hand-maintained fields; versions, status, colours and logo are fetched from the mine.
 
+`isProduction: false` marks a *test mine*: one a deployer wants to check in BlueGenes before
+releasing it. It does not appear in the public list, only with `?mines=all` or `?mines=test` (the
+API field keeps the name `isProduction`), and the pages tag it "test".
+
 Never change a mine's `namespace`: it is part of URLs that mines and clients store
 (`registry.intermine.org/<namespace>`).
 
@@ -80,7 +84,8 @@ Documented on the running server at [`/docs`](https://registry.intermine.org/doc
 the route table in `src/clj/intermine_registry/api.clj`). In short:
 
 - `GET /service/instances`: production instances, sorted by name, unreachable ones included (see
-  `status` and `last_check` below); `?mines=all|dev|prod`,
+  `status` and `last_check` below); `?mines=all|dev|prod` (`dev` (alias `test`): only test mines,
+  `isProduction` false; `prod`: only production; `all`: both; absent: production),
   `?q=` (organism, description word or part of the name).
   `{"instances": [...], "statusCode": 200, "executionTime": "11/17/2026, 2:10:58 AM"}`
 - `GET /service/instances/{id|namespace|name}`: `{"instance": {...}, "statusCode": 200, ...}`;
@@ -94,7 +99,7 @@ the route table in `src/clj/intermine_registry/api.clj`). In short:
 - `POST/PUT/DELETE /service/instances[/{id}]`: 405, the registry is read-only
 
 Pages: `/` (the mines, with a filter), `/instances/{namespace}`, `/map` (where the mines are: a
-world map with a dot per mine, from the `location` of its entry; production mines, all with
+world map with a dot per mine, from the `location` of its entry; production mines, test mines too with
 `?mines=all`; see [The map](#the-map)), `/docs`, `/status` (the last
 refresh of each mine: when, what changed, what failed), and the Galaxy hand-over pages
 `/im-to-galaxy?GALAXY_URL=` and `/galaxy-to-im?URL=`. The pages follow the OS's light or dark

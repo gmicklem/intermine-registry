@@ -99,11 +99,25 @@
           (is (= (get (expected-instance c) k) (get o k)) (str ns " " k)))
         (is (string? (get o "id")))))))
 
+(deftest mines-test-is-an-alias-of-dev
+  (swap! intermine-registry.data/state update :instances conj
+         {:id "996" :name "ZetaTestMine" :namespace "zetatest" :url "https://example.org/zetatest"
+          :description "" :organisms [] :neighbours [] :location {:latitude "" :longitude ""}
+          :maintainerOrgName "" :maintainerUrl "" :maintainerEmail "" :maintainerGithubUrl "" :twitter ""
+          :isProduction false :created_at nil :status "Running"})
+  (let [names #(map (fn [i] (get i "name")) (get (u/body-json (u/request :get "/service/instances" {:query %})) "instances"))]
+    (is (= ["ZetaTestMine"] (names "mines=dev")))
+    (is (= ["ZetaTestMine"] (names "mines=test")))
+    (is (not-any? #{"ZetaTestMine"} (names "mines=prod")))
+    (is (not-any? #{"ZetaTestMine"} (names nil)))
+    (is (some #{"ZetaTestMine"} (names "mines=all")))))
+
 (deftest mines-and-q-params
   (let [names #(map (fn [i] (get i "name")) (get (u/body-json (u/request :get "/service/instances" {:query %})) "instances"))]
     (is (= u/seeded-count (count (names "mines=all"))))
     (is (= u/seeded-count (count (names "mines=prod"))))
     (is (empty? (names "mines=dev")) "the seeded instances are all production")
+    (is (empty? (names "mines=test")) "test is an alias of dev")
     (is (= ["FlyMine"] (names "q=D.%20melanogaster")) "organism, exact")
     (is (= ["FlyMine"] (names "q=flym")) "part of the name, case-insensitive")
     (is (some #{"MouseMine"} (names "q=mouse")))

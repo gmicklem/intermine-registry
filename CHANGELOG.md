@@ -13,6 +13,9 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   API is unchanged.
 
 ### Changed
+- Non-production mines (`isProduction` false) are called "test" mines in the pages and docs (a "test"
+  tag, "show test mines"), and `?mines=test` is accepted as an alias of `?mines=dev`; the API fields
+  and the existing `mines` values are unchanged.
 - The data is a version-controlled file, `resources/instances.edn`, validated with clojure.spec at
   start-up and in CI; mines are added and changed by pull request. Seeded from the live registry's
   `/service/instances` on 17 Nov 2026 (14 running instances).
