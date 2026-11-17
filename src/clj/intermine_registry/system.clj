@@ -50,6 +50,7 @@
   (stop!)
   (data/load! opts)
   (logos/add-missing-tiles! (:cache-dir opts))
+  (logos/load-overrides!)
   (refresh/start-scheduler! opts)
   (let [s (run-jetty (server/handler opts) {:port (:port opts) :join? false :send-server-version? false})]
     (reset! server s)

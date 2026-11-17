@@ -51,6 +51,15 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   near-black tile and the others on a white one, in both page themes, and the API gives it as
   `images.logo_tile` (`"light"` or `"dark"`, present with `images.logo_cached`). A cache from before
   the shade was kept gets it at start-up.
+- Logo overrides: a mine's entry in `instances.edn` can name, as `:logo-override`, an image bundled
+  with the registry under `resources/public/logos/` (for a mine whose branding gives no usable logo
+  or a generic one). It wins over the fetched copy on the pages and at
+  `GET /instances/{namespace}/logo` (same `Cache-Control`, `ETag` and `nosniff` headers), the
+  refresh no longer fetches that mine's logo, and in the API `images.logo` and `images.logo_cached`
+  are both the registry's URL, `images.logo_tile` the override's shade and the new
+  `images.logo_declared` the logo the mine's branding names. PlanMine is the first: its branding
+  names the generic InterMine squares, so the registry carries the planarian from its front-page
+  logo (`planmine.png`), and its `images.logo` differs from the Node registry's.
 - A System / Light / Dark theme switch in the page header (stored in `localStorage`, applied before
   the first paint); without JavaScript the pages follow the OS setting as before.
 - New: `GET /health`, Dockerfile, Compose example, GitHub Actions CI.

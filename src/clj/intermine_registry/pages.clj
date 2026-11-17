@@ -129,20 +129,22 @@
 (defn- bot-reason? [reason] (contains? #{"bot-protection page" "html instead of json"} reason))
 
 (defn- tile-class
-  "The CSS class of the tile shade for the namespace's cached logo
-  (tile-light or tile-dark, see logos/logo-tile); tile-light without one."
+  "The CSS class of the tile shade for the namespace's logo (its override or
+  cached copy; tile-light or tile-dark, see logos/logo-tile); tile-light
+  without one."
   [namespace]
   (str "tile-" (or (logos/tile namespace) "light")))
 
 (defn- logo
-  "The registry's copy of the mine's logo (/instances/{namespace}/logo) over
-  a neutral mark (its initial), which shows when the registry holds no logo
-  yet or it does not load. The pages never point at the mine's own host. The
-  tile is dark for a light logo (logos/logo-tile), in either page theme."
+  "The registry's logo for the mine (/instances/{namespace}/logo: its logo
+  override, else the copy of its own logo) over a neutral mark (its
+  initial), which shows when the registry holds no logo yet or it does not
+  load. The pages never point at the mine's own host. The tile is dark for a
+  light logo (logos/logo-tile), in either page theme."
   [inst]
   [:span {:class (str "logo " (tile-class (:namespace inst))) :aria-hidden "true"}
    [:span.placeholder (h (subs (str (:name inst) "?") 0 1))]
-   (when (logos/cached? (:namespace inst))
+   (when (logos/has-logo? (:namespace inst))
      [:img {:src (logos/logo-path (:namespace inst)) :alt "" :loading "lazy" :onerror "this.remove()"}])])
 
 (def ^:private organisms-shown 6)
@@ -323,12 +325,16 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 (field-row "Location" (let [{:keys [latitude longitude]} (:location inst)]
                                         (if (str/blank? latitude) "" (h (str latitude ", " longitude)))))
                 (field-row "Colours" (or (seq (swatches (:colors inst))) ""))
-                (field-row "Logo" (let [u (safe-url (get-in inst [:images :logo]))]
+                (field-row "Logo" (let [u (safe-url (get-in inst [:images :logo]))
+                                        override (logos/override (:namespace inst))]
                                     (cond
-                                      (logos/cached? (:namespace inst))
+                                      (logos/has-logo? (:namespace inst))
                                       [:span [:img {:class (str "big-logo " (tile-class (:namespace inst)))
                                                     :src (logos/logo-path (:namespace inst)) :alt (str (h (:name inst)) " logo") :onerror "this.remove()"}]
-                                       (when u [:span " " [:code (h u)]])]
+                                       (if override
+                                         [:span " the registry's own image (" [:code (h (:file override))] ")"
+                                          (when u [:span "; the mine's branding names " [:code (h u)]])]
+                                         (when u [:span " " [:code (h u)]]))]
                                       u [:code (h u)]
                                       :else "")))
                 (field-row "Added" (h (date-part (:created_at inst))))
@@ -384,7 +390,10 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 " (when present) is the registry's copy of it, served from " [:code "/instances/{namespace}/logo"] ", and "
                 [:code "images.logo_tile"] " (present with it) is " [:code "\"light\""] " or " [:code "\"dark\""]
                 ": the shade of tile the logo reads well on, from its mean luminance (" [:code "dark"]
-                " for a white or pale logo)."]
+                " for a white or pale logo). For a mine whose logo the registry carries itself (a logo override, "
+                "for a mine whose branding gives no usable logo or a generic one), " [:code "images.logo"]
+                " and " [:code "images.logo_cached"] " are both the registry's URL, and "
+                [:code "images.logo_declared"] " is the logo the mine's branding names, when it names one."]
                [:pre.json (h (json/generate-string example {:pretty true}))]]))))
 
 (defn status-page [opts]

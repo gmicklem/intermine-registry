@@ -30,6 +30,14 @@ hand-maintained fields; versions, status, colours and logo are fetched from the 
 Never change a mine's `namespace`: it is part of URLs that mines and clients store
 (`registry.intermine.org/<namespace>`).
 
+A mine whose branding gives no usable logo, or a generic one, can have a logo carried by the
+registry itself: put the image in [`resources/public/logos/`](resources/public/logos) (png, svg,
+jpg, jpeg, gif or webp; a small square image, transparent if possible) and name it in the mine's
+entry as `:logo-override "<file>"` (a plain file name: letters, digits, `.`, `_`, `-`; CI checks
+that the file exists). Record where the file came from (URL, date) in a comment next to the entry.
+This is a last resort: first ask the mine's maintainer to set `branding.images.logo` in their
+`web.properties`, which every client then sees. See [Logo overrides](#logo-overrides).
+
 ## Running
 
 Needs JDK 17+ and the [Clojure CLI](https://clojure.org/guides/install_clojure).
@@ -78,8 +86,8 @@ the route table in `src/clj/intermine_registry/api.clj`). In short:
 - `GET /service/instances/{id|namespace|name}`: `{"instance": {...}, "statusCode": 200, ...}`;
   404 `{"statusCode": 404, "errorMsg": "Not Found", "message": ...}`
 - `GET /service/namespace?url=<mine url>`: `{"statusCode": 200, "namespace": "flymine"}`
-- `GET /instances/{namespace}/logo`: the registry's own copy of the mine's logo (see
-  [Logos](#logos)); 404 when it holds none yet
+- `GET /instances/{namespace}/logo`: the registry's own copy of the mine's logo, or its logo
+  override (see [Logos](#logos)); 404 when it holds none yet
 - `GET /{namespace}`: 303 redirect to the mine
 - `GET /health`: `{"status": "ok", "instances": 14, "running": 14, "unreachable": 0, "lastRefresh": ...}`
 - `PUT /service/synchronize`, `PUT /service/synchronize/{id}`: refresh now (admin token)
@@ -139,7 +147,7 @@ fails the previous copy is kept.
   `Cache-Control: public, max-age=86400`; 404 when there is none.
 - In the API, `images.logo_cached` is the absolute URL of that copy (built from
   `REGISTRY_BASE_URL`); it is present only when the registry holds a logo. `images.logo` is still
-  the mine's own URL, unchanged.
+  the mine's own URL, unchanged (except for a mine with a [logo override](#logo-overrides)).
 - `images.logo_tile`, present with `images.logo_cached`, is `"light"` or `"dark"`: the shade of the
   tile the logo reads well on. When it stores a logo the registry decodes it (PNG, JPEG, GIF; an
   ICO or SVG counts as `"light"`) and measures the mean luminance, 0.2126 R + 0.7152 G + 0.0722 B,
@@ -151,7 +159,28 @@ fails the previous copy is kept.
 - The pages put each logo on a 28 px tile of that shade, in both page themes, and show a light
   tile with the mine's initial until the registry holds a logo, so on a fresh install (no cache
   yet) every mine shows its initial until the first refresh, 10 s after start-up, has filled
-  `logos/`. The logo files are not part of the repository.
+  `logos/`. The logo files are not part of the repository (except the overrides below).
+
+#### Logo overrides
+
+A mine with a `:logo-override` in `instances.edn` (see
+[Adding or changing a mine](#adding-or-changing-a-mine)) shows the registry's own file,
+`resources/public/logos/<file>` on the classpath, instead of a fetched copy, everywhere: the home
+and instance pages, `GET /instances/{namespace}/logo` (served with the same `Cache-Control`,
+`X-Content-Type-Options: nosniff` and an `ETag` from the file's SHA-1, as for cached logos) and the
+API. The refresh does not fetch a logo for that mine (it still checks it and refreshes its versions
+and branding). The tile shade is measured from the override at start-up and kept in memory. In the
+API, for such a mine:
+
+- `images.logo` and `images.logo_cached` are both the registry's URL,
+  `REGISTRY_BASE_URL/instances/{namespace}/logo`;
+- `images.logo_tile` is the override's shade;
+- `images.logo_declared` is the logo the mine's own branding names (when it names one), so nothing
+  is lost.
+
+An override whose file is missing is ignored (with a warning at start-up) and the mine's logo is
+fetched as usual. PlanMine has one: its branding names the generic InterMine squares on
+`cdn.rawgit.com`, so the registry carries the planarian of its front-page logo (`planmine.png`).
 
 ## How the refresh works
 

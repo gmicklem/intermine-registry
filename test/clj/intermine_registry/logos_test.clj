@@ -2,7 +2,8 @@
   "The logo cache: fetching a mine's logo during the refresh, keeping the
   previous copy when a fetch fails, serving it at /instances/{namespace}/logo,
   images.logo_cached in the API and the pages; the tile shade of each logo
-  (images.logo_tile)."
+  (images.logo_tile); the logo overrides bundled with the registry
+  (:logo-override, resources/public/logos/)."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -346,9 +347,11 @@
         flymine-own (get-in (first (filter #(= "flymine" (:namespace %)) (data/instances))) [:images :logo])
         page (fn [uri] (:body (u/request :get uri)))]
     (try
-      (testing "before the first refresh: only the initial marks, never the mine's own host"
+      (testing "before the first refresh: only the initial marks (and the logo overrides), never the mine's own host"
         (let [home (page "/")]
-          (is (not (str/includes? home "<img")))
+          (is (= ["<img alt=\"\" loading=\"lazy\" onerror=\"this.remove()\" src=\"/instances/planmine/logo\">"]
+                 (re-seq #"<img[^>]*>" home))
+              "only PlanMine's override")
           (is (not (str/includes? home flymine-own)))
           (is (str/includes? home "class=\"placeholder\""))))
       (cached-state! dir "flymine")
@@ -372,3 +375,122 @@
           (is (str/includes? aqua "&quot;logo_tile&quot; : &quot;dark&quot;") "the JSON on the page")
           (is (str/includes? (page "/instances/mousemine") "class=\"logo tile-light\"") "no logo: the initial on a light tile")))
       (finally (delete-tree! dir)))))
+
+;; ---------------------------------------------------------------- overrides
+
+(def planmine-png
+  "The bytes of the bundled override resources/public/logos/planmine.png."
+  (with-open [in (io/input-stream (io/resource "public/logos/planmine.png"))] (.readAllBytes in)))
+
+(defn- sha1 [^bytes b]
+  (apply str (map #(format "%02x" (bit-and % 0xff)) (.digest (java.security.MessageDigest/getInstance "SHA-1") b))))
+
+(defn- api-instance [ns]
+  (get (u/body-json (u/request :get (str "/service/instances/" ns) {:handler-opts {:base-url "https://reg.example.org"}}))
+       "instance"))
+
+(deftest overrides-are-read-from-the-classpath
+  (is (= ["planmine"] (logos/load-overrides!)))
+  (let [o (logos/override "planmine")]
+    (is (= {:file "planmine.png" :content-type "image/png" :bytes (alength ^bytes planmine-png)
+            :sha1 (sha1 planmine-png) :logo-tile "light" :override true}
+           (dissoc o :body)))
+    (is (= (vec planmine-png) (vec (:body o)))))
+  (is (= "light" (logos/tile "planmine")) "the shade, computed from the image")
+  (is (logos/has-logo? "planmine"))
+  (is (not (logos/cached? "planmine")) "nothing fetched")
+  (is (nil? (logos/override "flymine")))
+  (is (not (logos/has-logo? "flymine")))
+  (testing "a missing file is ignored (logged)"
+    (swap! data/state update :instances conj (assoc testmine :url "http://example.invalid/testmine" :logo-override "nosuch.png"))
+    (is (nil? (logos/override "testmine")))
+    (is (= ["planmine"] (logos/load-overrides!)))
+    (is (nil? (logos/override-resource "../instances.edn")) "never a path"))
+  (testing "content types by extension"
+    (is (= "image/svg+xml" (logos/override-content-types "svg")))
+    (is (= "image/jpeg" (logos/override-content-types "jpeg")))
+    (is (= "image/webp" (logos/override-content-types "webp")))))
+
+(deftest the-override-is-served
+  (doseq [dir-opts [{} {:cache-dir "/nonexistent/registry-cache"}]]
+    (let [resp (u/request :get "/instances/planmine/logo" {:handler-opts dir-opts})]
+      (is (= 200 (:status resp)) "with or without a cache dir")
+      (is (= "image/png" (get-in resp [:headers "Content-Type"])))
+      (is (= "public, max-age=86400" (get-in resp [:headers "Cache-Control"])))
+      (is (= "nosniff" (get-in resp [:headers "X-Content-Type-Options"])))
+      (is (= (str "\"" (sha1 planmine-png) "\"") (get-in resp [:headers "ETag"])) "ETag from the SHA-1, as for cached logos")
+      (is (= (vec planmine-png) (vec (:body resp))))))
+  (testing "If-None-Match: 304"
+    (let [resp (u/request :get "/instances/planmine/logo" {:headers {"if-none-match" (str "\"" (sha1 planmine-png) "\"")}})]
+      (is (= 304 (:status resp))))))
+
+(deftest the-override-wins-over-a-cached-logo
+  (let [dir (temp-dir)
+        rawgit "https://cdn.rawgit.com/intermine/design-materials/78a13db5/logos/intermine/squareish/45x45.png"]
+    (try
+      (testing "API, nothing cached"
+        (is (= {"logo" "https://reg.example.org/instances/planmine/logo"
+                "logo_cached" "https://reg.example.org/instances/planmine/logo"
+                "logo_tile" "light"
+                "logo_declared" rawgit}
+               (get (api-instance "planmine") "images"))))
+      ;; a copy fetched before the override existed: white, so it would be on a dark tile
+      (cached-state! dir "planmine" white-png)
+      (is (= "dark" (get-in @data/state [:logos "planmine" :logo-tile])))
+      (testing "API: the override's URL and shade, not the cached copy's"
+        (let [images (get (api-instance "planmine") "images")]
+          (is (= "https://reg.example.org/instances/planmine/logo" (get images "logo")))
+          (is (= "https://reg.example.org/instances/planmine/logo" (get images "logo_cached")))
+          (is (= "light" (get images "logo_tile")))
+          (is (= rawgit (get images "logo_declared"))))
+        (let [listed (first (filter #(= "planmine" (get % "namespace"))
+                                    (get (u/body-json (u/request :get "/service/instances")) "instances")))]
+          (is (= "https://registry.intermine.org/instances/planmine/logo" (get-in listed ["images" "logo"])))
+          (is (= "light" (get-in listed ["images" "logo_tile"])))))
+      (testing "the route: the override's bytes, not the cached file"
+        (let [resp (u/request :get "/instances/planmine/logo" {:handler-opts {:cache-dir dir}})]
+          (is (= (vec planmine-png) (vec (:body resp))))
+          (is (= (str "\"" (sha1 planmine-png) "\"") (get-in resp [:headers "ETag"])))))
+      (testing "the pages"
+        (let [home (:body (u/request :get "/"))
+              inst (:body (u/request :get "/instances/planmine"))]
+          (is (re-find #"<span aria-hidden=\"true\" class=\"logo tile-light\"><span class=\"placeholder\">P</span><img [^>]*src=\"/instances/planmine/logo\"" home)
+              "the light tile of the override, not the cached copy's dark one")
+          (is (str/includes? inst "class=\"big-logo tile-light\""))
+          (is (str/includes? inst "the registry's own image (<code>planmine.png</code>)") "the Logo field")
+          (is (str/includes? inst rawgit) "the declared logo is still shown")
+          (is (str/includes? inst "logo_declared") "in the JSON on the page")))
+      (testing "an override without a declared logo: no logo_declared"
+        (swap! data/state update :instances (fn [insts] (mapv #(if (= "planmine" (:namespace %)) (assoc % :images {}) %) insts)))
+        (is (= #{"logo" "logo_cached" "logo_tile"} (set (keys (get (api-instance "planmine") "images"))))))
+      (finally (delete-tree! dir)))))
+
+(deftest the-refresh-skips-the-logo-of-an-overridden-mine
+  (let [hits (atom 0)
+        counted (fn [] (swap! hits inc) [200 "image/png" white-png])]
+    (with-mine {"/testmine/model/images/logo.png" counted
+                "/testmine/model/images/favicon.ico" counted
+                "/testmine/favicon.ico" counted}
+      (fn [dir _ _]
+        (swap! data/state update :instances
+               (fn [insts] (mapv #(if (= "testmine" (:namespace %)) (assoc % :logo-override "planmine.png") %) insts)))
+        (let [[{:keys [logo errors instance]}] (refresh-testmine! dir)]
+          (is (= "Running" (:status instance)) "the check itself ran")
+          (is (= "ok" (get-in instance [:last_check :outcome])))
+          (is (= {:logo "model/images/logo.png"} (:images instance)) "the branding is still refreshed")
+          (is (= "planmine.png" (:logo-override instance)) "the override is kept")
+          (is (nil? logo))
+          (is (empty? errors) "no error for the skipped step")
+          (is (zero? @hits) "no logo fetched")
+          (is (nil? (get-in @data/state [:logos "testmine"])))
+          (is (not (.exists (io/file dir "logos" "testmine.png")))))
+        (is (= (vec planmine-png) (vec (:body (u/request :get "/instances/testmine/logo" {:handler-opts {:cache-dir dir}}))))
+            "the override is served after the refresh")
+        (is (= "planmine.png" (:logo-override (first (filter #(= "testmine" (:namespace %)) (data/instances)))))
+            "and is still in the state")
+        (testing "an override whose file is missing does not stop the fetch"
+          (swap! data/state update :instances
+                 (fn [insts] (mapv #(if (= "testmine" (:namespace %)) (assoc % :logo-override "nosuch.png") %) insts)))
+          (let [[{:keys [logo]}] (refresh-testmine! dir)]
+            (is (= "testmine.png" (:file logo)))
+            (is (= 1 @hits))))))))

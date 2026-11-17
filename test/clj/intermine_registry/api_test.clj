@@ -33,12 +33,28 @@
    "wheatmine" {"url" "https://urgi.versailles.inrae.fr/WheatMine"
                 "maintainerUrl" "https://urgi.versailles.inrae.fr/"}})
 
+(def registry-logo-url
+  "The registry's URL of a mine's logo as the tests build it (u/opts
+  :base-url, as REGISTRY_BASE_URL, then /instances/{namespace}/logo)."
+  #(str (:base-url u/opts) "/instances/" % "/logo"))
+
+(def corrected-images
+  "images keys that differ from the capture because the registry carries a
+  logo override for the mine (:logo-override in instances.edn): namespace ->
+  key -> value, merged into the captured images (the captured images.logo
+  moves to images.logo_declared)."
+  {"planmine" {"logo" (registry-logo-url "planmine")
+               "logo_cached" (registry-logo-url "planmine")
+               "logo_tile" "light"
+               "logo_declared" "https://cdn.rawgit.com/intermine/design-materials/78a13db5/logos/intermine/squareish/45x45.png"}})
+
 (defn- expected-instance [captured]
   (let [ns (get captured "namespace")]
-    (merge (reduce (fn [m k] (assoc m k ""))
-                   (apply dissoc captured dropped-keys)
-                   (cleaned ns))
-           (corrected ns))))
+    (cond-> (merge (reduce (fn [m k] (assoc m k ""))
+                           (apply dissoc captured dropped-keys)
+                           (cleaned ns))
+                   (corrected ns))
+      (corrected-images ns) (update "images" merge (corrected-images ns)))))
 
 (deftest instances-envelope-and-fields
   (let [captured (u/capture "instances.json")
