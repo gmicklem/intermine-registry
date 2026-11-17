@@ -21,7 +21,23 @@
     (is (str/includes? body "/?mines=all"))
     (is (str/includes? body "Leonardo Kuffo"))
     (is (str/includes? body "/css/registry.css")))
-  (is (str/includes? (page "/" "mines=all") "show production mines only")))
+  (is (str/includes? (page "/" "mines=all") "show production mines only"))
+  (is (str/includes? (page "/") "show test mines"))
+  (is (not (str/includes? (page "/") "non-production"))))
+
+(deftest test-mines-are-tagged-test
+  (swap! intermine-registry.data/state update :instances conj
+         {:id "996" :name "ZetaTestMine" :namespace "zetatest" :url "https://example.org/zetatest"
+          :description "" :organisms [] :neighbours [] :location {:latitude "" :longitude ""}
+          :maintainerOrgName "" :maintainerUrl "" :maintainerEmail "" :maintainerGithubUrl "" :twitter ""
+          :isProduction false :created_at nil :status "Running"})
+  (is (not (str/includes? (page "/") "ZetaTestMine")))
+  (let [body (page "/" "mines=all")]
+    (is (str/includes? body "ZetaTestMine"))
+    (is (str/includes? body "<span class=\"tag\">test</span>"))
+    (is (not (str/includes? body "<span class=\"tag\">dev</span>"))))
+  (is (str/includes? (page "/instances/zetatest") "no (test mine)"))
+  (is (str/includes? (page "/map") "Show test mines too")))
 
 (deftest instance-detail
   (let [body (page "/instances/flymine")]

@@ -79,11 +79,12 @@
         (str/includes? (str/lower-case (:name inst)) ql))))
 
 (defn- production-filter
-  "?mines=dev: only non-production; prod: only production; any other value
-  (all): every instance; absent: only production (as the Node app)."
+  "?mines=dev (alias test): only test mines (isProduction false); prod: only
+  production; any other value (all): every instance; absent: only production
+  (as the Node app)."
   [mines]
   (cond (nil? mines) :isProduction
-        (= "dev" mines) (complement :isProduction)
+        (#{"dev" "test"} mines) (complement :isProduction)
         (= "prod" mines) :isProduction
         :else (constantly true)))
 
@@ -250,7 +251,7 @@
 (def routes-doc
   [{:method "GET" :path "/service/instances"
     :summary "The instances, sorted by name; unreachable ones are listed too (status \"Unreachable\", the reason in last_check)."
-    :params [["mines" "optional: absent = production instances only; dev = non-production only; prod = production only; all (or any other value) = both"]
+    :params [["mines" "optional: absent = production instances only; dev (alias test) = only test mines (isProduction false); prod = production only; all (or any other value) = both"]
              ["q" "optional: search; matches an organism exactly, a word of the description, or part of the name (case-insensitive)"]]
     :example "/service/instances"
     :returns "{\"instances\": [instance, ...], \"statusCode\": 200, \"executionTime\": \"...\"}"}

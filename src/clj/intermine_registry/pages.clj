@@ -194,7 +194,7 @@
              [:span.count [:span#shown (count insts)] " of " (count insts) " mines"]
              (if all?
                [:a {:href "/"} "show production mines only"]
-               [:a {:href "/?mines=all"} "show non-production mines"])]
+               [:a {:href "/?mines=all"} "show test mines"])]
             [:div.table-scroll
              [:table#mines.mines
               [:thead
@@ -213,7 +213,7 @@
                                            (str (:url inst) "/begin.do?GALAXY_URL=" (java.net.URLEncoder/encode ^String galaxy-url "UTF-8"))
                                            (safe-url (:url inst)))}
                           (h (:name inst))]
-                         (when-not (:isProduction inst) [:span.tag "dev"])
+                         (when-not (:isProduction inst) [:span.tag "test"])
                          (when (or (= "Unreachable" (:status inst)) (check-failed? inst))
                            [:span.unreachable-note (h (check-sentence inst))])]]]
                   [:td [:a {:href (str "/instances/" (h (:namespace inst)))} [:code (h (:namespace inst))]]]
@@ -280,7 +280,7 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
     (when (and lat lon (<= -90.0 lat 90.0) (<= -180.0 lon 180.0)) [lat lon])))
 
 (defn- map-href
-  "The /map link for the mine (with ?mines=all for a non-production mine),
+  "The /map link for the mine (with ?mines=all for a test mine),
   pointing at its dot."
   [inst]
   (str "/map" (when-not (:isProduction inst) "?mines=all") "#mine-" (:namespace inst)))
@@ -466,7 +466,7 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                       "in their registry entries. Mines at the same or nearby places are drawn as a small ring of dots with one label.")
               " " (if all?
                     [:a {:href "/map"} "Show production mines only"]
-                    [:a {:href "/map?mines=all"} "Show non-production mines too"]) "."]]
+                    [:a {:href "/map?mines=all"} "Show test mines too"]) "."]]
             [:figure.map-figure
              [:div.map-scroll (world-svg cs)]
              [:figcaption.map-hint "The map scrolls sideways."]]
@@ -538,7 +538,7 @@ fetch(galaxyData).then(function (r) { return r.text(); }).then(function (text) {
                 (field-row "Namespace" [:code (h (:namespace inst))])
                 (field-row "Id" [:code (h (:id inst))])
                 (field-row "URL" (if url [:a {:href url} (h url)] (h (:url inst))))
-                (field-row "Production" (if (:isProduction inst) "yes" "no (dev/beta)"))
+                (field-row "Production" (if (:isProduction inst) "yes" "no (test mine)"))
                 (field-row "Organisms" (h (str/join ", " (:organisms inst))))
                 (field-row "Neighbours" (h (str/join ", " (:neighbours inst))))
                 (field-row "InterMine version" (h (:intermine_version inst)))

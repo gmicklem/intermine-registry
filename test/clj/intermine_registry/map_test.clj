@@ -99,7 +99,7 @@
       (is (every? #(> (Math/hypot (- (:x tm) (:x %)) (- (:y tm) (:y %))) 20.0)
                   (remove #(= "targetmine" (:ns %)) ds))))))
 
-(deftest non-production-mines-only-with-mines-all
+(deftest test-mines-only-with-mines-all
   (swap! data/state update :instances conj
          (assoc injected :id "997" :name "BetaMine" :namespace "betamine" :isProduction false
                 :location {:latitude "-33.8688" :longitude "151.2093"}))
