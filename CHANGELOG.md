@@ -47,6 +47,10 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   Instances in the API gain `images.logo_cached` (absolute, from `REGISTRY_BASE_URL`) when a logo is
   held; `images.logo` is unchanged. The logo is shown on a light tile in both themes.
 - New: `GET /health`, Dockerfile, Compose example, GitHub Actions CI.
+- Data corrections (17 Nov 2026): AllianceMine's URL is the InterMine service root
+  `https://alliancemine.alliancegenome.org/alliancemine` (the registry held the Alliance BlueGenes
+  page); the URGI mines (OakMine, RepetDB, WheatMine) and their maintainer URL use the renamed
+  domain `urgi.versailles.inrae.fr`, to which every `inra.fr` URL now redirects.
 
 ### Removed
 - MongoDB, user accounts, login, the add/edit/delete pages and the write endpoints
