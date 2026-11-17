@@ -1,0 +1,13 @@
+HTTP/1.0 200 Connection established
+
+HTTP/2 200 
+access-control-allow-headers: Origin, X-Requested-With, Content-Type, Accept
+access-control-allow-origin: *
+content-type: application/json; charset=utf-8
+date: Tue, 17 Nov 2026 02:11:25 GMT
+etag: W/"4d892-RjuhL1D1dFV+FiG50k2J6g/7Wlg"
+server: Heroku
+via: 2.0 heroku-router
+x-powered-by: Express
+content-length: 317586
+

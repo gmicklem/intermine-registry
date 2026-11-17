@@ -1,0 +1,348 @@
+;; The InterMine Registry: the list of InterMine instances (mines).
+;;
+;; This file IS the registry's data. To add a mine, or to change the details of
+;; one, open a pull request against this file at
+;; https://github.com/intermine/intermine-registry (copy an existing entry; the
+;; server checks the file with clojure.spec at start-up and refuses to start if
+;; it is wrong, and `clojure -M:test` does the same check in CI).
+;;
+;; Maintained by hand (one map per mine):
+;;   :id                 unique string, the next free number ("57", "58", ...)
+;;   :name               display name, e.g. "FlyMine"
+;;   :namespace          unique short identifier, used in URLs
+;;                       (registry.intermine.org/<namespace>); never change it
+;;   :url                the mine's web application root, without /service
+;;   :description        free text
+;;   :organisms          vector of organism names, shown and searched (?q=)
+;;   :neighbours         vector of group names, e.g. ["MODs"] (BlueGenes uses them)
+;;   :location           {:latitude "" :longitude ""} (strings, may be empty)
+;;   :maintainerOrgName, :maintainerUrl, :maintainerEmail, :maintainerGithubUrl,
+;;   :twitter            strings, may be empty
+;;   :isProduction       true for production mines (listed by default),
+;;                       false for dev/beta mines (listed with ?mines=all|dev)
+;;   :created_at         ISO 8601 timestamp of when the mine was added (or nil)
+;;
+;; Refreshed from the mine by the server (the values here are the initial
+;; cache, captured from the Node registry on 17 Nov 2026; you do not need to
+;; set them for a new mine): :api_version, :intermine_version,
+;; :release_version, :status ("Running" / "Not Running"), :colors, :images,
+;; :last_time_updated. The refreshed values are kept in REGISTRY_CACHE_DIR, not
+;; written back to this file.
+;;
+;; Seeded from https://registry.intermine.org/service/instances on 17 Nov 2026
+;; (the 14 running mines; see CHANGELOG.md). Version strings that were HTML
+;; pages in the capture (AllianceMine, OakMine, PhytoMine, RepetDB, WheatMine)
+;; were replaced by "".
+[
+ {:id "53"
+  :name "AllianceMine"
+  :namespace "alliancemine"
+  :url "https://www.alliancegenome.org/bluegenes/alliancemine"
+  :description "AllianceMine integrates many types of data for all the Model Organisms Fly, Worm, Zebrafish, Yeast, Rat, and Mouse. You can run flexible queries, export results and analyse lists of data."
+  :organisms ["MODs"]
+  :neighbours ["MODs"]
+  :location {:latitude "" :longitude ""}
+  :maintainerOrgName ""
+  :maintainerUrl ""
+  :maintainerEmail ""
+  :maintainerGithubUrl "https://github.com/yeastgenome/alliancemine"
+  :twitter ""
+  :isProduction true
+  :created_at "2021-07-28T08:14:32.226Z"
+  :api_version ""
+  :intermine_version ""
+  :release_version ""
+  :status "Running"
+  :last_time_updated "2026-11-17T00:00:21.282Z"}
+
+ {:id "54"
+  :name "AquaMine"
+  :namespace "aquaMine"
+  :url "https://aquamine.rnet.missouri.edu/aquamine"
+  :description ""
+  :organisms []
+  :neighbours []
+  :location {:latitude "" :longitude ""}
+  :maintainerOrgName "Elsik Lab (University of Missouri)"
+  :maintainerUrl "https://elsiklab.missouri.edu/"
+  :maintainerEmail ""
+  :maintainerGithubUrl "https://github.com/elsiklab/aquamine"
+  :twitter ""
+  :isProduction true
+  :created_at "2023-03-14T21:31:22.690Z"
+  :api_version "35"
+  :intermine_version "5.1.0"
+  :release_version "1.3"
+  :status "Running"
+  :colors {:header {:main "#357b8c" :text "#ffffff"}}
+  :images {:logo "https://aquamine.rnet.missouri.edu/aquamine/model/images/logo.png"}
+  :last_time_updated "2026-11-17T00:00:35.476Z"}
+
+ {:id "55"
+  :name "FAANGMine"
+  :namespace "faangmine"
+  :url "https://faangmine.rnet.missouri.edu/faangmine"
+  :description ""
+  :organisms []
+  :neighbours []
+  :location {:latitude "" :longitude ""}
+  :maintainerOrgName "Elsik Lab (University of Missouri)"
+  :maintainerUrl "https://elsiklab.missouri.edu/"
+  :maintainerEmail ""
+  :maintainerGithubUrl "https://github.com/elsiklab/faangmine_intermine"
+  :twitter ""
+  :isProduction true
+  :created_at "2023-03-14T21:32:44.698Z"
+  :api_version "35"
+  :intermine_version "5.1.0"
+  :release_version "1.4"
+  :status "Running"
+  :colors {:header {:main "#8aa8d3" :text "#ffffff"}}
+  :images {:logo "https://faangmine.rnet.missouri.edu/faangmine/model/images/logo.png"}
+  :last_time_updated "2026-11-17T00:00:07.319Z"}
+
+ {:id "35"
+  :name "FlyMine"
+  :namespace "flymine"
+  :url "https://www.flymine.org/flymine"
+  :description " An integrated database for Drosophila genomics"
+  :organisms ["D. melanogaster"]
+  :neighbours ["Animals" "MODs"]
+  :location {:latitude "52.199236" :longitude "0.122280"}
+  :maintainerOrgName "InterMine"
+  :maintainerUrl "http://intermine.org"
+  :maintainerEmail "support@intermine.org"
+  :maintainerGithubUrl "https://github.com/intermine/flymine"
+  :twitter "intermineorg"
+  :isProduction true
+  :created_at "2017-08-15T11:57:46.104Z"
+  :api_version "35"
+  :intermine_version "5.1.0"
+  :release_version "v53 February 2022"
+  :status "Running"
+  :colors {:header {:main "#5c0075" :text "#fff"}}
+  :images {:logo "https://www.flymine.org/flymine/model/images/logo.png"}
+  :last_time_updated "2026-11-17T00:00:32.310Z"}
+
+ {:id "5"
+  :name "HumanMine"
+  :namespace "humanmine"
+  :url "https://www.humanmine.org/humanmine"
+  :description "An integrated database of <i>Homo sapiens</i> genomic data"
+  :organisms ["H. sapiens"]
+  :neighbours ["Animals"]
+  :location {:latitude "52.199236" :longitude "0.122280"}
+  :maintainerOrgName "InterMine"
+  :maintainerUrl "http://intermine.org"
+  :maintainerEmail "support@intermine.org"
+  :maintainerGithubUrl "https://github.com/intermine/humanmine"
+  :twitter "intermineorg"
+  :isProduction true
+  :created_at "2017-06-22T06:00:35.348Z"
+  :api_version "34"
+  :intermine_version "5.0.8"
+  :release_version "12 February 2022"
+  :status "Running"
+  :colors {:header {:main "#bed73b" :text "#000"}}
+  :images {:logo "https://www.humanmine.org/humanmine/model/images/logo.png"}
+  :last_time_updated "2026-11-17T00:00:08.492Z"}
+
+ {:id "23"
+  :name "HymenopteraMine"
+  :namespace "hymenopteramine"
+  :url "https://hymenopteramine.rnet.missouri.edu/hymenopteramine"
+  :description "An integrated data warehouse for the Hymenoptera Genome Database"
+  :organisms ["A. dorsata" "A. echinatior" "A. florea" "A. mellifera" "B. impatiens" "B. terrestris" "C. biroi" "C. floridanus" "C. obscurior" "D. novaeangliae" "E. mexicana" "H. laboriosa" "H. saltator" "L. albipes" "L. humile" "M. quadrifasciata" "M. rotundata" "N. vitripennis" "P. barbatus" "S. invicta" "W. auropunctata"]
+  :neighbours ["Animals"]
+  :location {:latitude "38.940397" :longitude "-92.327813"}
+  :maintainerOrgName "Elsik Lab (University of Missouri)"
+  :maintainerUrl "https://elsiklab.missouri.edu"
+  :maintainerEmail ""
+  :maintainerGithubUrl "https://github.com/elsiklab/hymenopteramine_intermine"
+  :twitter ""
+  :isProduction true
+  :created_at "2017-07-05T06:44:54.278Z"
+  :api_version "35"
+  :intermine_version "5.1.0"
+  :release_version "1.6"
+  :status "Running"
+  :colors {:header {:main "#efc885" :text "#000"}}
+  :images {:logo "https://hymenopteramine.rnet.missouri.edu/hymenopteramine/model/images/logo.png"}
+  :last_time_updated "2026-11-17T00:00:14.206Z"}
+
+ {:id "43"
+  :name "MaizeMine"
+  :namespace "maizemine"
+  :url "https://maizemine.rnet.missouri.edu/maizemine"
+  :description "An integrated data warehouse for MaizeGDB"
+  :organisms []
+  :neighbours ["Plants"]
+  :location {:latitude "38.940397" :longitude "-92.327813"}
+  :maintainerOrgName "Elsik Lab (University of Missouri)"
+  :maintainerUrl "https://elsiklab.missouri.edu/"
+  :maintainerEmail ""
+  :maintainerGithubUrl "https://github.com/elsiklab/maizemine"
+  :twitter "MaizeGDB"
+  :isProduction true
+  :created_at "2018-01-19T10:50:18.002Z"
+  :api_version "35"
+  :intermine_version "5.1.0"
+  :release_version "1.6"
+  :status "Running"
+  :colors {:header {:main "#386F0D" :text "#FFFFFF"}}
+  :images {:logo "https://maizemine.rnet.missouri.edu/maizemine/model/images/logo.png"}
+  :last_time_updated "2026-11-17T00:00:26.385Z"}
+
+ {:id "2"
+  :name "MouseMine"
+  :namespace "mousemine"
+  :url "http://www.mousemine.org/mousemine"
+  :description "MouseMine is a powerful new system for online access to mouse data from MGI (Mouse Genome Informatics). For more than 20 years, MGI has provided high-quality scientific data on the laboratory mouse, gathered and integrated from hundreds of sources. Over the years, MGI has provided an evolving set of tools for accessing those data, including an interactive web interface (WI), database reports downloaded from our ftp site, direct SQL access, and most recently, via data warehouse systems such as BioMart. MouseMine represents a new generation of access to MGI data. Powered by InterMine, MouseMine offers flexible querying, numerous predefined query templates, a point-and-click interface for building your own queries or modifying a template, iterative refinement of results, built-in enrichment analysis, downloading in multiple formats, forwarding to Galaxy, and more."
+  :organisms ["M. musculus"]
+  :neighbours ["Animals" "AGR" "MODs"]
+  :location {:latitude "44.366262" :longitude "-68.196443"}
+  :maintainerOrgName "Mouse Genome Info"
+  :maintainerUrl "http://www.informatics.jax.org/"
+  :maintainerEmail ""
+  :maintainerGithubUrl "https://github.com/mgijax/mousemine"
+  :twitter "mgi_mouse"
+  :isProduction true
+  :created_at nil
+  :api_version "25"
+  :intermine_version "1.8.5"
+  :release_version "1.8-2026-10"
+  :status "Running"
+  :colors {:header {:main "#6eccf8" :text "#000"}}
+  :images {:logo "http://www.mousemine.org/mousemine/model/images/mouse_logo.png"}
+  :last_time_updated "2026-11-17T00:00:07.058Z"}
+
+ {:id "45"
+  :name "OakMine"
+  :namespace "oakmine"
+  :url "https://urgi.versailles.inra.fr/OakMine_PM1N"
+  :description "Quercus robur annotation database"
+  :organisms ["Q. robur"]
+  :neighbours ["Plants"]
+  :location {:latitude "48.802754" :longitude "2.087040"}
+  :maintainerOrgName "URGI"
+  :maintainerUrl "https://urgi.versailles.inra.fr/"
+  :maintainerEmail ""
+  :maintainerGithubUrl ""
+  :twitter "inra_urgi"
+  :isProduction true
+  :created_at "2018-06-19T10:59:31.837Z"
+  :api_version ""
+  :intermine_version ""
+  :release_version ""
+  :status "Running"
+  :last_time_updated "2026-11-17T00:00:13.247Z"}
+
+ {:id "22"
+  :name "PhytoMine"
+  :namespace "phytomine"
+  :url "https://phytozome.jgi.doe.gov/phytomine/"
+  :description "An InterMine interface to data from Phytozome, the Plant Comparative Genomics portal of the Department of Energy's Joint Genome Institute, which hosts 81 assembled and annotation genomes, from 78 viridiplantae species."
+  :organisms ["Viridiplantae"]
+  :neighbours ["Plants"]
+  :location {:latitude "37.93237" :longitude "-122.021681"}
+  :maintainerOrgName "JGI Joint Genome Institute"
+  :maintainerUrl "https://jgi.doe.gov/"
+  :maintainerEmail ""
+  :maintainerGithubUrl ""
+  :twitter "phytozome"
+  :isProduction true
+  :created_at "2017-07-05T06:44:47.924Z"
+  :api_version ""
+  :intermine_version ""
+  :release_version ""
+  :status "Running"
+  :last_time_updated "2026-11-17T00:00:20.966Z"}
+
+ {:id "56"
+  :name "PlanMine"
+  :namespace "planmine"
+  :url "http://planmine.mpinat.mpg.de/planmine"
+  :description "An integrated web resource of data and tools to mine Planarian biology"
+  :organisms ["Schmidtea mediterranea" "Schmidtea polychroa" "Dugesia japonica" "Dendrocoelum lacteum" "Planaria torva" "Polycelis nigra" "Polycelis tenuis:Pten" "Schistosoma mansoni" "Hymenolepis microstoma" "Taenia solium" "Echinococcus granulosus" "Echinococcus multilocularis" "Kronborgia cf. amphipodicola CEL-2017" "Protomonotresidae sp. n. CEL-2015" "Bothrioplana semperi" "Rhychomesostoma rostratum" "Gnosonesimida sp. IV CEL-2015" "Geocentrophora applanata" "Prorhynchus alpinus" "Prostheceraeus vittatus" "Stylochus ellipticus" "Microstomum lineare" "Macrostomum lignano"]
+  :neighbours ["Animals"]
+  :location {:latitude "51.56204559" :longitude "9.96980119"}
+  :maintainerOrgName "Rink Lab, Max Planck Institute for Biophysical Chemistry"
+  :maintainerUrl "https://www.mpinat.mpg.de/rink"
+  :maintainerEmail "office.rink@mpinat.mpg.de"
+  :maintainerGithubUrl ""
+  :twitter ""
+  :isProduction true
+  :created_at "2024-11-19T10:48:06.843Z"
+  :api_version "26"
+  :intermine_version "1.8.5"
+  :release_version "2.0"
+  :status "Running"
+  :colors {:header {:main "#595455" :text "#fff"}}
+  :images {:logo "https://cdn.rawgit.com/intermine/design-materials/78a13db5/logos/intermine/squareish/45x45.png"}
+  :last_time_updated "2026-11-17T00:00:36.178Z"}
+
+ {:id "20"
+  :name "RepetDB"
+  :namespace "repetdbmine"
+  :url "http://urgi.versailles.inra.fr/repetdb"
+  :description "Repeats intermine database"
+  :organisms ["Arabidopsis lyrata subsp. lyrata" "Arabidopsis thaliana" "Arabis alpina" "Botrytis cinerea B05.10" "Brassica rapa" "Capsella rubella" "Schrenkiella parvula" "Vitis vinifera"]
+  :neighbours ["Other Mines"]
+  :location {:latitude "48.802754" :longitude "2.087040"}
+  :maintainerOrgName "URGI"
+  :maintainerUrl "https://urgi.versailles.inra.fr/"
+  :maintainerEmail ""
+  :maintainerGithubUrl ""
+  :twitter "inra_urgi"
+  :isProduction true
+  :created_at "2017-07-05T06:44:44.701Z"
+  :api_version ""
+  :intermine_version ""
+  :release_version ""
+  :status "Running"
+  :last_time_updated "2026-11-17T00:00:12.271Z"}
+
+ {:id "12"
+  :name "ThaleMine"
+  :namespace "thalemine"
+  :url "https://bar.utoronto.ca/thalemine"
+  :description "ThaleMine enables you to analyze Arabidopsis thaliana genes, proteins, gene expression, protein-protein interactions, orthologs, and more."
+  :organisms ["A. thaliana" "H. sapiens" "S. cerevisiae"]
+  :neighbours ["Plants"]
+  :location {:latitude "43.6636057" :longitude "-79.4014567"}
+  :maintainerOrgName "Bio-Analytic Resource (BAR)"
+  :maintainerUrl "http://bar.utoronto.ca/"
+  :maintainerEmail "nicholas.provart@utoronto.ca"
+  :maintainerGithubUrl "https://github.com/asherpasha/thalemine"
+  :twitter "BAR_PlantBio"
+  :isProduction true
+  :created_at "2017-06-22T07:17:42.255Z"
+  :api_version "35"
+  :intermine_version "5.1.0"
+  :release_version "5.1.0-20250704"
+  :status "Running"
+  :colors {:header {:main "#009933" :text "#fff"}}
+  :images {:logo "https://s.gravatar.com/avatar/978e836a9d65238a784543ad932637cd.png"}
+  :last_time_updated "2026-11-17T00:00:17.443Z"}
+
+ {:id "46"
+  :name "WheatMine"
+  :namespace "wheatmine"
+  :url "https://urgi.versailles.inra.fr/WheatMine"
+  :description "Wheat IWGSC RefSeq v1.0"
+  :organisms ["T. aestivum"]
+  :neighbours ["Plants"]
+  :location {:latitude "48.802754" :longitude "2.087040"}
+  :maintainerOrgName "URGI"
+  :maintainerUrl "https://urgi.versailles.inra.fr/"
+  :maintainerEmail ""
+  :maintainerGithubUrl ""
+  :twitter "inra_urgi"
+  :isProduction true
+  :created_at "2018-07-31T09:45:19.848Z"
+  :api_version ""
+  :intermine_version ""
+  :release_version ""
+  :status "Running"
+  :last_time_updated "2026-11-17T00:00:06.972Z"}
+]

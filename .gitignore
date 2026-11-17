@@ -3,3 +3,8 @@ node_modules/
 *.iml
 *.log
 package-lock.json
+# Clojure
+/target/
+/.cpcache/
+/.clj-kondo/.cache/
+/cache/
