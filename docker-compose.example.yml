@@ -1,0 +1,32 @@
+# The registry as a Compose service, ready to paste into docker_template next
+# to the mines (it needs no database). Put it behind the same reverse proxy
+# (Caddy/nginx) that terminates TLS for registry.intermine.org.
+#
+#   docker compose -f docker-compose.example.yml up -d --build
+#   curl -s localhost:3000/health
+services:
+  registry:
+    build: .                       # or: image: ghcr.io/intermine/intermine-registry:2.0.0
+    container_name: intermine-registry
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      REGISTRY_REFRESH_MINUTES: "60"          # 0 disables the scheduled refresh
+      REGISTRY_CACHE_DIR: /cache
+      REGISTRY_BASE_URL: https://registry.intermine.org
+      # REGISTRY_ADMIN_TOKEN: change-me       # enables PUT /service/synchronize
+      # REGISTRY_INSTANCES_FILE: /data/instances.edn   # with the volume below
+    volumes:
+      - registry-cache:/cache
+      # - ./instances.edn:/data/instances.edn:ro
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  registry-cache:
