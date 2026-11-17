@@ -70,14 +70,15 @@ All configuration is by environment variable:
 Documented on the running server at [`/docs`](https://registry.intermine.org/docs) (generated from
 the route table in `src/clj/intermine_registry/api.clj`). In short:
 
-- `GET /service/instances`: running production instances, sorted by name; `?mines=all|dev|prod`,
+- `GET /service/instances`: production instances, sorted by name, unreachable ones included (see
+  `status` and `last_check` below); `?mines=all|dev|prod`,
   `?q=` (organism, description word or part of the name).
   `{"instances": [...], "statusCode": 200, "executionTime": "11/17/2026, 2:10:58 AM"}`
 - `GET /service/instances/{id|namespace|name}`: `{"instance": {...}, "statusCode": 200, ...}`;
   404 `{"statusCode": 404, "errorMsg": "Not Found", "message": ...}`
 - `GET /service/namespace?url=<mine url>`: `{"statusCode": 200, "namespace": "flymine"}`
 - `GET /{namespace}`: 303 redirect to the mine
-- `GET /health`: `{"status": "ok", "instances": 14, "running": 14, "lastRefresh": ...}`
+- `GET /health`: `{"status": "ok", "instances": 14, "running": 14, "unreachable": 0, "lastRefresh": ...}`
 - `PUT /service/synchronize`, `PUT /service/synchronize/{id}`: refresh now (admin token)
 - `POST/PUT/DELETE /service/instances[/{id}]`: 405, the registry is read-only
 
@@ -85,14 +86,42 @@ Pages: `/` (the mines, with a filter), `/instances/{namespace}`, `/docs`, `/stat
 refresh of each mine: when, what changed, what failed), and the Galaxy hand-over pages
 `/im-to-galaxy?GALAXY_URL=` and `/galaxy-to-im?URL=`.
 
+### Status and last check
+
+Each instance in the API has a `status` string (as before) and a `last_check` object:
+
+```json
+"status": "Unreachable",
+"last_check": {"time": "2026-11-18T10:00:00.000Z", "outcome": "failed",
+               "reason": "bot-protection page", "since": "2026-11-17T09:00:00.000Z"}
+```
+
+- `last_check.outcome` is `"ok"` or `"failed"`; `reason` is `null` for `ok`; `time` is when the
+  check ran; `since` is the time of the first failure of the current run of failures (`null` for
+  `ok`). `last_check` is `null` for a mine that has never been checked. It is kept in the cache like
+  the versions. The seeded capture counts as a check at its `last_time_updated`, outcome `ok`.
+- `status` is `"Running"` when the last check succeeded, `"Unreachable"` after two consecutive
+  failed checks, `"Not checked yet"` before the first check. (A mine's first failure keeps
+  `"Running"` but is recorded in `last_check`; a mine that has never succeeded is `"Unreachable"` at
+  its first failure.) `"Not Running"` is no longer produced; an older cache or instances file with
+  it is read as `"Unreachable"`. `isProduction` is not affected.
+- `reason` is one of `timeout`, `connection refused`, `unknown host`, `TLS error`, `http NNN` (a
+  non-2xx answer, e.g. `http 503`), `bot-protection page` (an HTML answer that mentions Anubis, has
+  a `<meta name="generator">` tag or a title about a challenge or verification), `html instead of
+  json` (any other HTML), `invalid version string`, `answer too large`, or `connection error: <Class>`.
+- Mines are never hidden because of a check; clients that want only working mines can filter on
+  `status == "Running"`.
+
 ## How the refresh works
 
 For each mine, in parallel with at most 4 mines at a time and 10 s timeouts, the server calls
 `{url}/service/version/intermine`, `/service/version/release`, `/service/version` and
 `/service/branding`, with the rules of the Node app's `scheduled/automaticUpdate.js`:
 
-- `status` is `"Running"` when `/service/version/intermine` answers 200 with a version, else
-  `"Not Running"`; `/service/instances` lists only running mines (as before);
+- the check succeeds when `/service/version/intermine` answers 200 with a version; see
+  [Status and last check](#status-and-last-check) for `status` and `last_check`. A failed check never
+  removes a mine from `/service/instances` or from the pages, and keeps its last known versions
+  and branding;
 - the version answers are cleaned (quotes, brackets and slashes removed) and a version equal to
   the API version is blanked (a mine answering every path with the same page);
 - `colors` and `images` come from `properties.colors` and `properties.images` of the branding JSON;
@@ -102,6 +131,41 @@ New in 2.0: every answer is validated (`api_version` an integer string, versions
 HTML pages or unsubstituted `@TOKENS@`); a rejected answer keeps the previous value and is
 reported on `/status`. The refreshed values go to the cache file, never back into
 `instances.edn`; the values in `instances.edn` are only the initial ones.
+
+## For mine maintainers: letting the registry check your mine
+
+The registry checks every mine every `REGISTRY_REFRESH_MINUTES` (default 60) to show its versions
+and branding and whether it answers. Each check is four plain `GET` requests, sent in parallel, with a 10 s
+timeout:
+
+```
+GET {url}/service/version
+GET {url}/service/version/intermine
+GET {url}/service/version/release
+GET {url}/service/branding
+```
+
+sent with `User-Agent: InterMine-Registry/2.0 (+https://registry.intermine.org)` and
+`Accept: text/plain, application/json;q=0.9, */*;q=0.1` (a mine answers `Accept: application/json`
+with a JSON envelope instead of the bare version; the registry reads the bare version). Redirects
+are followed.
+
+If your mine sits behind bot protection such as [Anubis](https://anubis.techaro.lol), a CDN
+challenge or a web application firewall, the checker gets a challenge page instead of the version.
+The registry then shows your mine as Unreachable with the reason `bot-protection page` (or `html
+instead of json`), and keeps its last known versions. To let the checks through, either:
+
+- exempt those four paths (`/service/version`, `/service/version/intermine`,
+  `/service/version/release`, `/service/branding`; BlueGenes and the InterMine clients need
+  `/service/*` anyway) from the bot protection, or
+- allowlist the User-Agent `InterMine-Registry/2.0` (or the registry server's IP address).
+
+Unreachable mines stay listed: on the home page, in `/service/instances` and on their own page,
+with the reason and the date it began (`/status` shows the reasons for every mine, the instance page
+has a "Last check" section). A single failed check is only recorded; a mine is marked Unreachable
+when two checks in a row fail, so a restart or a passing network problem does not flag it. The
+next successful check clears it. The reason on `/status` is what the registry saw, so it is the
+first place to look if your mine is listed as Unreachable although it works in a browser.
 
 ## Migrating from the Node version (1.x)
 
