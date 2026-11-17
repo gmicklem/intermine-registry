@@ -14,7 +14,27 @@
 
 (deftest the-bundled-file-is-valid
   (is (= 14 (count (data/read-instances nil))))
-  (is (every? #(contains? % :namespace) bundled)))
+  (is (every? #(contains? % :namespace) bundled))
+  (testing "every logo override names a file on the classpath, under public/logos/"
+    (is (seq (filter :logo-override bundled)) "planmine has one")
+    (doseq [{:keys [namespace logo-override]} bundled
+            :when logo-override]
+      (is (some? (io/resource (str "public/logos/" logo-override))) (str namespace ": " logo-override)))))
+
+(deftest logo-override-spec
+  (let [planmine (first (filter #(= "planmine" (:namespace %)) bundled))
+        with (fn [v] (problems-of (mapv #(if (= "planmine" (:namespace %)) (assoc % :logo-override v) %) bundled)))]
+    (is (= "planmine.png" (:logo-override planmine)))
+    (testing "accepted"
+      (doseq [v ["planmine.png" "x.svg" "a_b-c.1.jpg" "Logo.jpeg" "l.gif" "l.webp"]]
+        (is (nil? (with v)) v))
+      (is (nil? (problems-of (mapv #(dissoc % :logo-override) bundled))) "optional"))
+    (testing "rejected"
+      (doseq [v ["../planmine.png" "logos/planmine.png" "/etc/passwd.png" "planmine" "planmine.ico"
+                 "planmine.PNG" "plan mine.png" "planmine.png.exe" "" nil 42]]
+        (let [msg (with v)]
+          (is (some? msg) (pr-str v))
+          (when msg (is (str/includes? msg ":logo-override") (pr-str v))))))))
 
 (deftest bad-files-are-refused-with-a-clear-message
   (let [flymine (first (filter #(= "flymine" (:namespace %)) bundled))]

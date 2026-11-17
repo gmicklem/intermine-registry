@@ -58,6 +58,12 @@
        (not (re-find #"(?i)doctype|html" v))
        (not (re-matches #"@[A-Z_]+@" v))))
 
+(defn logo-override-name?
+  "Is v the file name of a logo override, a plain file name (never a path)
+  under resources/public/logos/ with an image extension?"
+  [v]
+  (and (string? v) (boolean (re-matches #"[A-Za-z0-9._-]+\.(png|svg|jpg|jpeg|gif|webp)" v))))
+
 (s/def ::string string?)
 (s/def ::id (s/and string? #(re-matches #"[A-Za-z0-9._-]+" %)))
 (s/def ::name (s/and string? (complement str/blank?)))
@@ -78,6 +84,7 @@
 (s/def ::twitter string?)
 (s/def ::isProduction boolean?)
 (s/def ::created_at (s/nilable iso-timestamp?))
+(s/def ::logo-override logo-override-name?)
 ;; refreshed fields (initial cache)
 (s/def ::api_version (s/or :empty #{""} :version api-version?))
 (s/def ::intermine_version (s/or :empty #{""} :version version-string?))
@@ -100,7 +107,7 @@
   (s/keys :req-un [::id ::name ::namespace ::url ::description ::organisms ::neighbours
                    ::location ::maintainerOrgName ::maintainerUrl ::maintainerEmail
                    ::maintainerGithubUrl ::twitter ::isProduction ::created_at]
-          :opt-un [::api_version ::intermine_version ::release_version ::status
+          :opt-un [::logo-override ::api_version ::intermine_version ::release_version ::status
                    ::colors ::images ::last_time_updated ::last_check]))
 
 (defn- duplicates [xs]
@@ -136,10 +143,10 @@
                 (or (nil? (:fetched e)) (iso-timestamp? (:fetched e))))))
 
 (def fixed-keys
-  "The hand-maintained keys, in file order."
+  "The hand-maintained keys, in file order (:logo-override is optional)."
   [:id :name :namespace :url :description :organisms :neighbours :location
    :maintainerOrgName :maintainerUrl :maintainerEmail :maintainerGithubUrl
-   :twitter :isProduction :created_at])
+   :twitter :isProduction :created_at :logo-override])
 
 (def refreshed-keys
   "The keys the refresh sets."

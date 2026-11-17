@@ -30,16 +30,25 @@
   images.logo_cached, the absolute URL of the registry's copy, and
   images.logo_tile, \"light\" or \"dark\": the shade of tile the logo is
   meant to sit on (dark for a light logo); images.logo, the mine's own URL,
-  is not changed."
+  is not changed. A mine with a logo override (:logo-override in
+  instances.edn) has the registry's URL in images.logo as well, and the
+  logo its branding names, if any, in images.logo_declared."
   ([inst]
    (apply array-map (mapcat (fn [k] (when (contains? inst k) [k (get inst k)])) json-key-order)))
   ([inst {:keys [base-url]}]
-   (let [j (instance->json inst)]
-     (if (logos/cached? (:namespace inst))
-       (assoc j :images (assoc (or (:images inst) (array-map))
-                               :logo_cached (str (or base-url default-base-url) (logos/logo-path (:namespace inst)))
-                               :logo_tile (logos/tile (:namespace inst))))
-       j))))
+   (let [j (instance->json inst)
+         ns (:namespace inst)
+         images (or (:images inst) (array-map))
+         registry-url (str (or base-url default-base-url) (logos/logo-path ns))]
+     (cond
+       (logos/override ns)
+       (assoc j :images (cond-> (assoc images :logo registry-url :logo_cached registry-url :logo_tile (logos/tile ns))
+                          (not (str/blank? (:logo images))) (assoc :logo_declared (:logo images))))
+
+       (logos/cached? ns)
+       (assoc j :images (assoc images :logo_cached registry-url :logo_tile (logos/tile ns)))
+
+       :else j))))
 
 (defn json-response
   ([status body] (json-response status body {}))
@@ -159,14 +168,17 @@
                  {"Allow" "GET"}))
 
 (defn get-logo
-  "GET /instances/{namespace}/logo: the registry's copy of the mine's logo
-  with its content type, cacheable for a day; 404 when there is none. (An SVG
-  is served with a CSP that forbids scripts, as it is served from the
-  registry's own origin.)"
+  "GET /instances/{namespace}/logo: the mine's logo override (from the
+  classpath) or else the registry's copy of the mine's logo, with its content
+  type, cacheable for a day; 404 when there is none. (An SVG is served with a
+  CSP that forbids scripts, as it is served from the registry's own origin.)"
   [namespace {:keys [cache-dir]}]
-  (let [entry (get-in @data/state [:logos namespace])
-        body (try (logos/read-logo cache-dir entry)
-                  (catch java.io.IOException _ nil))]
+  (let [override (logos/override namespace)
+        entry (or override (get-in @data/state [:logos namespace]))
+        body (if override
+               (:body override)
+               (try (logos/read-logo cache-dir entry)
+                    (catch java.io.IOException _ nil)))]
     (if body
       {:status 200
        :headers (cond-> {"Content-Type" (:content-type entry)
@@ -253,10 +265,10 @@
     :example "/service/namespace?url=www.flymine.org/flymine"
     :returns "{\"statusCode\": 200, \"namespace\": \"...\"}; 400 without url; 404 {\"message\": \"Url Not Found\"}"}
    {:method "GET" :path "/instances/{namespace}/logo"
-    :summary "The registry's own copy of the mine's logo (fetched from the mine during the refresh; falls back to the mine's favicon), served with its image content type and Cache-Control: public, max-age=86400. Listed in the API as images.logo_cached, with images.logo_tile (\"light\" or \"dark\") the shade of tile it reads well on."
+    :summary "The registry's own copy of the mine's logo (fetched from the mine during the refresh; falls back to the mine's favicon), or the logo override the registry carries for the mine (then also in images.logo, and the mine's declared logo in images.logo_declared), served with its image content type and Cache-Control: public, max-age=86400. Listed in the API as images.logo_cached, with images.logo_tile (\"light\" or \"dark\") the shade of tile it reads well on."
     :params [["namespace" "path: exact namespace"]]
     :example nil
-    :returns "the image (png, jpeg, gif, svg or ico); 404 text when the registry holds none yet"}
+    :returns "the image (png, jpeg, gif, svg, ico; webp for an override); 404 text when the registry holds none yet"}
    {:method "GET" :path "/{namespace}"
     :summary "Redirects (303) to the mine's web application."
     :params [["namespace" "path: exact namespace"]]

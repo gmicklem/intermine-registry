@@ -31,7 +31,9 @@
     `concurrency` mines at a time;
   - a failed branding call keeps the previous colors and images;
   - after a successful check the mine's logo is fetched and kept by the
-    registry (refresh-logo); a failed fetch keeps the previous copy."
+    registry (refresh-logo); a failed fetch keeps the previous copy. A mine
+    with a logo override (:logo-override in instances.edn, the file present)
+    has no logo fetched at all: the registry's own file is its logo."
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -351,14 +353,18 @@
   "Fetches and applies; returns the apply-results map plus :checked and :ms.
   With a :cache-dir in opts, a mine whose check succeeded also has its logo
   fetched and stored: :logo is the new index entry when that worked; when it
-  did not, the previous copy stays and the reason is added to :errors."
+  did not, the previous copy stays and the reason is added to :errors. A
+  mine with a logo override (whose file exists) has no logo fetched: the
+  step is skipped, without an error."
   ([instance] (refresh-instance instance {}))
   ([instance {:keys [cache-dir] :as opts}]
    (let [t0 (System/nanoTime)
          fetched (fetch (:url instance))
          now (data/iso-now)
          result (apply-results instance fetched now opts)
-         logo (when (and cache-dir (= "ok" (get-in result [:instance :last_check :outcome])))
+         logo (when (and cache-dir
+                         (= "ok" (get-in result [:instance :last_check :outcome]))
+                         (not (logos/override-image (:logo-override instance))))
                 (refresh-logo (:instance result) (get-in @data/state [:logos (:namespace instance)]) cache-dir))]
      (cond-> (assoc result
                     :checked now

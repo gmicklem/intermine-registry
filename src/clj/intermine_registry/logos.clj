@@ -12,7 +12,14 @@
   tile the pages put behind the logo, chosen from the logo's mean luminance
   when it is stored (logo-tile), so that a white logo is not lost on a white
   tile. Entries from before the tile was kept get one at start-up
-  (add-missing-tiles!)."
+  (add-missing-tiles!).
+
+  A mine can also have a logo of the registry's own, bundled with it: the
+  :logo-override of its entry in instances.edn names a file under
+  resources/public/logos/ (on the classpath). An override wins over the
+  fetched copy everywhere (has-logo?, tile, logo-entry), the refresh does not
+  fetch a logo for that mine, and its tile shade is computed once, in memory
+  (load-overrides! at start-up, else on first use)."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -183,16 +190,95 @@
   (str "/instances/" namespace "/logo"))
 
 (defn cached?
-  "Does the registry hold a logo for the namespace?"
+  "Does the registry hold a fetched copy of the namespace's logo (in the
+  cache dir)?"
   [namespace]
   (contains? (:logos @data/state) namespace))
 
-(defn tile
-  "The tile shade (\"light\" or \"dark\") of the namespace's cached logo;
-  nil when the registry holds none. An entry without one (not upgraded yet)
-  counts as light."
+;; ---------------------------------------------------------------- overrides
+
+(def override-content-types
+  "The content type of a logo override, by file extension (the extensions of
+  data/logo-override-name?)."
+  {"png" "image/png" "jpg" "image/jpeg" "jpeg" "image/jpeg" "gif" "image/gif"
+   "svg" "image/svg+xml" "webp" "image/webp"})
+
+(defn override-resource
+  "The classpath resource of a logo override file name (public/logos/<file>),
+  or nil when the name is not acceptable or there is no such file."
+  [file]
+  (when (data/logo-override-name? file)
+    (io/resource (str "public/logos/" file))))
+
+(defonce ^{:private true :doc "file name -> override entry (with :body), read once"}
+  overrides
+  (atom {}))
+
+(defn- read-override [file]
+  (when-let [r (override-resource file)]
+    (let [body (with-open [in (io/input-stream r)] (.readAllBytes in))]
+      {:file file
+       :content-type (get override-content-types (str/lower-case (re-find #"[^.]+$" file)))
+       :bytes (alength body) :sha1 (sha1-hex body) :logo-tile (logo-tile body)
+       :override true :body body})))
+
+(defn override-image
+  "The override entry {:file :content-type :bytes :sha1 :logo-tile :override
+  true :body bytes} of a logo override file name, read from the classpath
+  and kept in memory; nil when there is no such file."
+  [file]
+  (when file
+    (or (get @overrides file)
+        (when-let [e (read-override file)]
+          (swap! overrides assoc file e)
+          e))))
+
+(defn override-file
+  "The :logo-override of the namespace's instance, or nil."
   [namespace]
-  (when-let [entry (get-in @data/state [:logos namespace])]
+  (some #(when (= namespace (:namespace %)) (:logo-override %)) (data/instances)))
+
+(defn override
+  "The override entry of the namespace (see override-image), or nil when its
+  instance has no :logo-override or the file is missing."
+  [namespace]
+  (some-> (override-file namespace) override-image))
+
+(defn load-overrides!
+  "At start-up: reads every logo override named in the instances and
+  computes its tile shade; a missing file is logged (the override is then
+  ignored: the fetched copy, if any, is shown). Returns the namespaces with
+  a usable override."
+  []
+  (into []
+        (keep (fn [{:keys [namespace logo-override]}]
+                (when logo-override
+                  (if-let [entry (override-image logo-override)]
+                    (do (log/info (str "Logo override for " namespace ":") logo-override
+                                  (str "(" (:logo-tile entry) " tile)"))
+                        namespace)
+                    (log/warn "Logo override" logo-override "of" namespace
+                              "not found on the classpath (public/logos/); ignored")))))
+        (data/instances)))
+
+(defn logo-entry
+  "The logo the registry shows for the namespace: its override entry, else
+  the index entry of its fetched copy, else nil."
+  [namespace]
+  (or (override namespace) (get-in @data/state [:logos namespace])))
+
+(defn has-logo?
+  "Does the registry have a logo to show for the namespace (an override or a
+  fetched copy)?"
+  [namespace]
+  (boolean (or (override namespace) (cached? namespace))))
+
+(defn tile
+  "The tile shade (\"light\" or \"dark\") of the namespace's logo (the
+  override's, else the cached copy's); nil when the registry has none. An
+  entry without one (not upgraded yet) counts as light."
+  [namespace]
+  (when-let [entry (logo-entry namespace)]
     (if (contains? tiles (:logo-tile entry)) (:logo-tile entry) "light")))
 
 (defn add-missing-tiles
