@@ -67,6 +67,8 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   near-black tile and the others on a white one, in both page themes, and the API gives it as
   `images.logo_tile` (`"light"` or `"dark"`, present with `images.logo_cached`). A cache from before
   the shade was kept gets it at start-up.
+- TargetMine has a bundled logo override (`resources/public/logos/targetmine.png`: its own 192 px
+  logo, taken from the Internet Archive while the server is being repaired).
 - Logo overrides: a mine's entry in `instances.edn` can name, as `:logo-override`, an image bundled
   with the registry under `resources/public/logos/` (for a mine whose branding gives no usable logo
   or a generic one). It wins over the fetched copy on the pages and at

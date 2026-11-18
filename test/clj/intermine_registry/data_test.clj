@@ -20,7 +20,7 @@
   (is (some #{"targetmine"} (map :namespace bundled)) "TargetMine, added 17 Nov 2026")
   (is (every? #(contains? % :namespace) bundled))
   (testing "every logo override names a file on the classpath, under public/logos/"
-    (is (seq (filter :logo-override bundled)) "planmine has one")
+    (is (= #{"planmine" "targetmine"} (set (map :namespace (filter :logo-override bundled)))) "planmine and targetmine have one")
     (doseq [{:keys [namespace logo-override]} bundled
             :when logo-override]
       (is (some? (io/resource (str "public/logos/" logo-override))) (str namespace ": " logo-override)))))
