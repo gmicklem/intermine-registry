@@ -349,9 +349,10 @@
     (try
       (testing "before the first refresh: only the initial marks (and the logo overrides), never the mine's own host"
         (let [home (page "/")]
-          (is (= ["<img alt=\"\" loading=\"lazy\" onerror=\"this.remove()\" src=\"/instances/planmine/logo\">"]
-                 (re-seq #"<img[^>]*>" home))
-              "only PlanMine's override")
+          (is (= #{"<img alt=\"\" loading=\"lazy\" onerror=\"this.remove()\" src=\"/instances/planmine/logo\">"
+                   "<img alt=\"\" loading=\"lazy\" onerror=\"this.remove()\" src=\"/instances/targetmine/logo\">"}
+                 (set (re-seq #"<img[^>]*>" home)))
+              "only the two logo overrides (PlanMine, TargetMine)")
           (is (not (str/includes? home flymine-own)))
           (is (str/includes? home "class=\"placeholder\""))))
       (cached-state! dir "flymine")
@@ -390,7 +391,7 @@
        "instance"))
 
 (deftest overrides-are-read-from-the-classpath
-  (is (= ["planmine"] (logos/load-overrides!)))
+  (is (= ["planmine" "targetmine"] (logos/load-overrides!)))
   (let [o (logos/override "planmine")]
     (is (= {:file "planmine.png" :content-type "image/png" :bytes (alength ^bytes planmine-png)
             :sha1 (sha1 planmine-png) :logo-tile "light" :override true}
@@ -404,7 +405,7 @@
   (testing "a missing file is ignored (logged)"
     (swap! data/state update :instances conj (assoc testmine :url "http://example.invalid/testmine" :logo-override "nosuch.png"))
     (is (nil? (logos/override "testmine")))
-    (is (= ["planmine"] (logos/load-overrides!)))
+    (is (= ["planmine" "targetmine"] (logos/load-overrides!)))
     (is (nil? (logos/override-resource "../instances.edn")) "never a path"))
   (testing "content types by extension"
     (is (= "image/svg+xml" (logos/override-content-types "svg")))

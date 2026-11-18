@@ -354,6 +354,11 @@
   :status "Unreachable"
   :last_check {:time "2026-11-17T00:00:00Z" :outcome "failed" :reason "server being repaired (maintainer, November 2026)" :since "2026-11-17T00:00:00Z"}
   :colors {:header {:main "#4C4C4C" :text "#FFFFFF"}}
+  ;; While the server is down the registry cannot fetch the logo, so TargetMine's own
+  ;; 192 px logo (tm-logo-192.png, the golden hexagon; from the Internet Archive's copy
+  ;; of targetmine.mizuguchilab.org/images/, 22 Feb 2017) is bundled as an override
+  ;; (Gos, 18 Nov 2026). Remove the override once the mine serves its logo again.
+  :logo-override "targetmine.png"
   :images {:logo "https://targetmine.mizuguchilab.org/images/tm-logo-45.png"}}
 
  {:id "12"
