@@ -6,7 +6,7 @@
 (use-fixtures :each u/with-bundled-data)
 
 (def all-names ["AllianceMine" "AquaMine" "FAANGMine" "FlyMine" "HumanMine" "HymenopteraMine" "MaizeMine"
-                "MouseMine" "OakMine" "PhytoMine" "PlanMine" "RepetDB" "TargetMine" "ThaleMine" "WheatMine"])
+                "MouseMine" "OakMine" "PlanMine" "RepetDB" "TargetMine" "ThaleMine" "WheatMine"])
 
 (defn- page [uri & [query]]
   (let [resp (u/request :get uri {:query query})]
