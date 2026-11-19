@@ -18,7 +18,6 @@
   (namespace -> keys)."
   {"alliancemine" #{"api_version"}
    "oakmine" #{"api_version" "intermine_version" "release_version"}
-   "phytomine" #{"api_version" "intermine_version" "release_version"}
    "repetdbmine" #{"api_version" "intermine_version" "release_version"}
    "wheatmine" #{"api_version" "intermine_version" "release_version"}})
 
@@ -69,8 +68,15 @@
   "Namespaces in instances.edn that were not in the 17 Nov 2026 capture."
   ["targetmine"])
 
+(def removed-since-capture
+  "Namespaces that were in the capture and have been removed from instances.edn
+  (PhytoMine, 19 Nov 2026: the service has been withdrawn)."
+  #{"phytomine"})
+
 (deftest instances-envelope-and-fields
-  (let [captured (u/capture "instances.json")
+  (let [all-captured (u/capture "instances.json")
+        captured (update all-captured "instances"
+                         (fn [is] (vec (remove #(removed-since-capture (get % "namespace")) is))))
         resp (u/request :get "/service/instances")
         ours (u/body-json resp)]
     (is (= 200 (:status resp)))

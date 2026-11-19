@@ -24,6 +24,9 @@ A re-implementation in Clojure of the GSoC 2017 Node/Express/MongoDB registry, k
   November 2026)") while its server is repaired; a successful check turns it to Running. A mine
   listed as Unreachable stays so while its checks fail, whatever the age of its `last_check.since`.
   The tests count the instances from the data instead of assuming 14.
+- PhytoMine (id 22, JGI) removed on 19 Nov 2026 by decision of the project owner: the service has
+  been withdrawn, and its address (`https://phytozome.jgi.doe.gov/phytomine/`) now serves the
+  Phytozome web application, not an InterMine web service.
 - Versions and branding are refreshed every `REGISTRY_REFRESH_MINUTES` (default 360, every six hours:
   the registry advertises the range of mines, not their uptime; was daily at midnight), with 10 s timeouts, and every answer is validated: HTML pages (served by mines behind
   bot protection or retired mines) are no longer stored as versions; the previous value is kept and
